@@ -169,8 +169,12 @@ function extractCardData(card) {
   title = title.replace(/\s*\(Verified job\)\s*$/, '').trim();
 
   // Company and Location: structural siblings of the title <p>
-  // Title <p> is identified as the first <p> in the card that contains child spans
-  const titleP = Array.from(card.querySelectorAll('p')).find(p => p.querySelector('span'));
+  // Find the title <p> by checking if its text includes the title from the dismiss button.
+  // Verified jobs have dual spans (screen-reader + visual) that duplicate the title text,
+  // so exact matching fails — includes() handles both verified and non-verified cards.
+  const titleP = title
+    ? Array.from(card.querySelectorAll('p')).find(p => p.textContent.includes(title))
+    : null;
   // Company is in the div immediately after the title paragraph (contains a <p>)
   const companyDiv = titleP?.nextElementSibling;
   const company = companyDiv?.querySelector('p')?.textContent.trim() || '';
