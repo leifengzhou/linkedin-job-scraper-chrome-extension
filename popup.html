@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      width: 280px;
+      padding: 16px;
+      margin: 0;
+    }
+    h1 {
+      font-size: 14px;
+      font-weight: 600;
+      margin: 0 0 12px;
+      color: #0a66c2;
+    }
+    #status {
+      font-size: 12px;
+      color: #555;
+      margin: 0 0 8px;
+    }
+    #progress {
+      font-size: 12px;
+      color: #777;
+      margin: 0 0 12px;
+      min-height: 16px;
+    }
+    #btn {
+      width: 100%;
+      padding: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      background: #0a66c2;
+      color: white;
+    }
+    #btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    #btn.stop {
+      background: #cc1016;
+    }
+    .error {
+      color: #cc1016 !important;
+    }
+  </style>
+</head>
+<body>
+  <h1>LinkedIn Job Scraper</h1>
+  <p id="status">Checking page...</p>
+  <p id="progress"></p>
+  <button id="btn" disabled>Loading...</button>
+  <script src="popup.js"></script>
+</body>
+</html>
