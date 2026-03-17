@@ -71,23 +71,33 @@ async function scrapeAllPages() {
 async function scrapeCurrentPage(cards, today, pageNum, alreadyScraped) {
   let scraped = 0;
 
-  for (const card of cards) {
+  for (const [cardIndex, card] of cards.entries()) {
     if (isStopped) break;
 
-    // Extract what we can from the left panel card (no click needed)
     const cardData = extractCardData(card);
-    console.log('[LinkedInScraper] Card:', cardData.title, '|', cardData.company);
+    console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Card: "${cardData.title}" @ ${cardData.company}`);
 
-    // Click card to load job details in right panel
+    // Snapshot state BEFORE click
+    const prevJobId = new URLSearchParams(window.location.search).get('currentJobId') || '';
+    const prevDescText = document.querySelector('[data-testid="expandable-text-box"]')?.innerText || '';
+
     card.click();
 
-    // Wait for right panel to render — condition-based, not fixed sleep
-    const descEl = await waitForElement('[data-testid="expandable-text-box"]', 5000);
+    // 1. Wait for URL to update (proves LinkedIn registered the click)
+    const newJobId = await waitForJobIdChange(prevJobId, 3000);
+    if (newJobId) {
+      // 2. URL changed — wait for description content to actually swap
+      await waitForDescriptionChange(prevDescText, 5000);
+      console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] URL: ${prevJobId} → ${newJobId}`);
+    } else {
+      // First card or already selected — ensure description panel is loaded
+      await waitForDescriptionChange('', 3000);
+      console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] URL unchanged (job may already be selected)`);
+    }
 
-    // Job ID comes from the URL after clicking
     const jobId = new URLSearchParams(window.location.search).get('currentJobId') || '';
     if (!jobId) {
-      console.warn('[LinkedInScraper] No currentJobId in URL after click, skipping');
+      console.warn(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] No currentJobId — skipping`);
       continue;
     }
 
@@ -98,6 +108,8 @@ async function scrapeCurrentPage(cards, today, pageNum, alreadyScraped) {
       await sleep(300);
     }
 
+    // Always re-query after expand (element may be replaced by LinkedIn)
+    const descEl = document.querySelector('[data-testid="expandable-text-box"]');
     const description = descEl ? descEl.innerText.trim() : '(Description not available)';
 
     // Get apply URL from right panel
@@ -124,12 +136,18 @@ async function scrapeCurrentPage(cards, today, pageNum, alreadyScraped) {
       }
     }
 
-    const jobData = { ...cardData, jobId, applyUrl, applyType, description };
-    console.log('[LinkedInScraper] jobData:', jobData.title, '| id:', jobId, '| apply:', applyType);
+    // Mismatch warning: if card company doesn't appear in first 200 chars of description
+    const descSnippet = description.slice(0, 80);
+    if (cardData.company && !description.slice(0, 200).toLowerCase().includes(cardData.company.toLowerCase())) {
+      console.warn(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] ⚠ Company "${cardData.company}" not in description start — possible stale panel`);
+    }
+    console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Desc: "${descSnippet}..."`);
 
+    const jobData = { ...cardData, jobId, applyUrl, applyType, description };
     const markdown = formatMarkdown(jobData);
     const filename = `scraped-jobs/${today}/${sanitizeFilename(jobData.company, jobData.title, jobId)}`;
 
+    console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Saving: ${filename}`);
     chrome.runtime.sendMessage({ action: "download", filename, content: markdown });
 
     scraped++;
@@ -143,23 +161,24 @@ async function scrapeCurrentPage(cards, today, pageNum, alreadyScraped) {
 }
 
 function extractCardData(card) {
-  // Title: span.d955c530 is the accessible/screen-reader text for titles and dates
-  const allD955 = Array.from(card.querySelectorAll('span.d955c530'));
-
-  // First span.d955c530 is the job title (may include "(Verified job)" suffix)
-  let title = allD955[0]?.textContent.trim() || '';
+  // Title: dismiss button aria-label is stable ("Dismiss {title} job")
+  const dismissBtn = card.querySelector('button[aria-label^="Dismiss"]');
+  let title = dismissBtn
+    ? dismissBtn.getAttribute('aria-label').replace(/^Dismiss\s+/, '').replace(/\s+job$/, '').trim()
+    : '';
   title = title.replace(/\s*\(Verified job\)\s*$/, '').trim();
 
   // Company and Location: structural siblings of the title <p>
-  const titleP = allD955[0]?.closest('p');
+  // Title <p> is identified as the first <p> in the card that contains child spans
+  const titleP = Array.from(card.querySelectorAll('p')).find(p => p.querySelector('span'));
   // Company is in the div immediately after the title paragraph (contains a <p>)
   const companyDiv = titleP?.nextElementSibling;
   const company = companyDiv?.querySelector('p')?.textContent.trim() || '';
   // Location is the <p> after the company div
   const location = companyDiv?.nextElementSibling?.textContent.trim() || '';
 
-  // Date: span.d955c530 that starts with "Posted on"
-  const dateSpan = allD955.find(s => s.textContent.startsWith('Posted on'));
+  // Date: first span anywhere in the card whose text starts with "Posted on"
+  const dateSpan = Array.from(card.querySelectorAll('span')).find(s => s.textContent.trim().startsWith('Posted on'));
   const datePosted = dateSpan?.textContent.replace(/^Posted on\s*/, '').trim() || '';
 
   // Salary: <p> matching a salary pattern (may not be present)
@@ -216,16 +235,37 @@ ${description}
 `;
 }
 
-function waitForElement(selector, timeoutMs = 5000) {
+function waitForJobIdChange(prevJobId, timeoutMs = 5000) {
   return new Promise(resolve => {
-    const el = document.querySelector(selector);
-    if (el) { resolve(el); return; }
-    const timeout = setTimeout(() => { observer.disconnect(); resolve(null); }, timeoutMs);
-    const observer = new MutationObserver(() => {
+    const check = () => new URLSearchParams(window.location.search).get('currentJobId');
+    const id = check();
+    if (id && id !== prevJobId) { resolve(id); return; }
+    const interval = setInterval(() => {
+      const id = check();
+      if (id && id !== prevJobId) { clearInterval(interval); clearTimeout(timeout); resolve(id); }
+    }, 100);
+    const timeout = setTimeout(() => { clearInterval(interval); resolve(null); }, timeoutMs);
+  });
+}
+
+// Note: if two consecutive jobs have identical description text, this will time out
+// (harmless — the URL change already confirmed LinkedIn loaded the new job).
+function waitForDescriptionChange(prevText, timeoutMs = 5000) {
+  const selector = '[data-testid="expandable-text-box"]';
+  return new Promise(resolve => {
+    const check = () => {
       const el = document.querySelector(selector);
-      if (el) { clearTimeout(timeout); observer.disconnect(); resolve(el); }
+      if (!el) return null;
+      return el.innerText !== prevText ? el : null;
+    };
+    const result = check();
+    if (result) { resolve(result); return; }
+    const timeout = setTimeout(() => { observer.disconnect(); resolve(document.querySelector(selector)); }, timeoutMs);
+    const observer = new MutationObserver(() => {
+      const result = check();
+      if (result) { clearTimeout(timeout); observer.disconnect(); resolve(result); }
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
   });
 }
 

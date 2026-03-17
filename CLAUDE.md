@@ -53,10 +53,10 @@ LinkedIn uses hashed class names that change on every deploy. The scraper avoids
 |---|---|
 | Left panel (job list) | `[data-component-type="LazyColumn"]` |
 | Job cards | `div[role="button"][componentkey]` filtered by presence of `button[aria-label^="Dismiss"]` |
-| Job title (in card) | First `span.d955c530` — LinkedIn's stable accessible-text class |
+| Job title (in card) | `button[aria-label^="Dismiss"]` aria-label → strip `"Dismiss "` prefix and `" job"` suffix |
 | Company (in card) | `p` inside the div immediately after the title `<p>`'s parent |
 | Location (in card) | Text of the element after the company div |
-| Date posted (in card) | `span.d955c530` whose text starts with `"Posted on"` |
+| Date posted (in card) | First `span` in the card whose text starts with `"Posted on"` |
 | Salary (in card) | `<p>` matching `/\$[\d,.]+[KM]?\/yr/` |
 | Apply type (in card) | Card text content includes `"Easy Apply"` |
 | Expand description | `[data-testid="expandable-text-button"]` |
