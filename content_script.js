@@ -6,6 +6,8 @@ window.__linkedInScraperLoaded = true;
 
 let isStopped = false;
 let isRunning = false;
+const { collectJobDataWithRetries } = globalThis.LinkedInScraperRetryPolicy;
+const { findSectionContext, formatAboutCompanySection, readSectionText } = globalThis.LinkedInScraperDescriptionUtils;
 
 console.log('[LinkedInScraper] Content script loaded on', location.href);
 
@@ -101,51 +103,39 @@ async function scrapeCurrentPage(cards, today, pageNum, alreadyScraped) {
       continue;
     }
 
-    // Expand description if truncated
-    const moreBtn = document.querySelector('[data-testid="expandable-text-button"]');
-    if (moreBtn) {
-      moreBtn.click();
-      await sleep(300);
-    }
-
-    // Always re-query after expand (element may be replaced by LinkedIn)
-    const descEl = document.querySelector('[data-testid="expandable-text-box"]');
-    const description = descEl ? descEl.innerText.trim() : '(Description not available)';
-
-    // Get apply URL from right panel
-    let applyUrl = `https://www.linkedin.com/jobs/view/${jobId}/`;
-    let applyType = cardData.applyType;
-
-    if (applyType !== 'Easy Apply') {
-      const externalBtn = document.querySelector('a[aria-label="Apply on company website"]');
-      if (externalBtn) {
-        applyType = 'Apply on company website';
-        const rawHref = externalBtn.getAttribute('href') || '';
-        try {
-          const urlObj = new URL(rawHref, 'https://www.linkedin.com');
-          const redirectUrl = urlObj.searchParams.get('url');
-          if (redirectUrl) {
-            const decoded = decodeURIComponent(redirectUrl);
-            applyUrl = /^https?:\/\//i.test(decoded) ? decoded : rawHref;
-          } else {
-            applyUrl = rawHref;
-          }
-        } catch {
-          applyUrl = rawHref;
+    const retryResult = await collectJobDataWithRetries({
+      maxRetries: 10,
+      collect: async (attemptNumber) => {
+        if (attemptNumber > 1) {
+          console.warn(
+            `[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Missing critical fields on attempt ${attemptNumber - 1} — retrying after ${attemptNumber - 1}s`
+          );
+          card.click();
+          await sleep(300);
         }
-      }
-    }
+
+        return collectCurrentJobData(card, jobId);
+      },
+      sleep
+    });
+
+    const { jobData, missingFields } = retryResult;
 
     // Mismatch warning: if card company doesn't appear in first 200 chars of description
-    const descSnippet = description.slice(0, 80);
-    if (cardData.company && !description.slice(0, 200).toLowerCase().includes(cardData.company.toLowerCase())) {
-      console.warn(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] ⚠ Company "${cardData.company}" not in description start — possible stale panel`);
+    const descSnippet = jobData.description.slice(0, 80);
+    if (jobData.company && !jobData.description.slice(0, 200).toLowerCase().includes(jobData.company.toLowerCase())) {
+      console.warn(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] ⚠ Company "${jobData.company}" not in description start — possible stale panel`);
     }
     console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Desc: "${descSnippet}..."`);
 
-    const jobData = { ...cardData, jobId, applyUrl, applyType, description };
+    let filenameBase = sanitizeFilename(jobData.company, jobData.title, jobId);
+    if (missingFields.length > 0) {
+      console.warn(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Missing fields: ${missingFields.join(', ')} — saving with warning prefix`);
+      filenameBase = `EMPTY_FIELD_DETECTED_${filenameBase}`;
+    }
+
     const markdown = formatMarkdown(jobData);
-    const filename = `scraped-jobs/${today}/${sanitizeFilename(jobData.company, jobData.title, jobId)}`;
+    const filename = `scraped-jobs/${today}/${filenameBase}`;
 
     console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Saving: ${filename}`);
     chrome.runtime.sendMessage({ action: "download", filename, content: markdown });
@@ -196,6 +186,74 @@ function extractCardData(card) {
   return { title, company, location, datePosted, salary, applyType };
 }
 
+async function collectCurrentJobData(card, jobId) {
+  const cardData = extractCardData(card);
+
+  // Resolve both right-panel sections independently.
+  let aboutJobContext = findSectionContext(document, "About the job");
+  let aboutCompanyContext = findSectionContext(document, "About the company");
+  let description = await readSectionText({
+    textEl: aboutJobContext.textEl,
+    expandButtonEl: aboutJobContext.expandButtonEl,
+    sleep
+  });
+  let aboutCompany = await readSectionText({
+    textEl: aboutCompanyContext.textEl,
+    expandButtonEl: aboutCompanyContext.expandButtonEl,
+    sleep
+  });
+
+  // Re-query after potential expansion because LinkedIn may replace the section nodes.
+  aboutJobContext = findSectionContext(document, "About the job");
+  aboutCompanyContext = findSectionContext(document, "About the company");
+  description = await readSectionText({
+    textEl: aboutJobContext.textEl,
+    expandButtonEl: null,
+    sleep
+  }) || '(Description not available)';
+  aboutCompany = await readSectionText({
+    textEl: aboutCompanyContext.textEl,
+    expandButtonEl: null,
+    sleep
+  });
+
+  // Get apply URL from right panel
+  let applyUrl = `https://www.linkedin.com/jobs/view/${jobId}/`;
+  let applyType = cardData.applyType;
+
+  if (applyType !== 'Easy Apply') {
+    const externalBtn = document.querySelector('a[aria-label="Apply on company website"]');
+    if (externalBtn) {
+      applyType = 'Apply on company website';
+      const rawHref = externalBtn.getAttribute('href') || '';
+      try {
+        const urlObj = new URL(rawHref, 'https://www.linkedin.com');
+        const redirectUrl = urlObj.searchParams.get('url');
+        if (redirectUrl) {
+          const decoded = decodeURIComponent(redirectUrl);
+          applyUrl = /^https?:\/\//i.test(decoded) ? decoded : rawHref;
+        } else {
+          applyUrl = rawHref;
+        }
+      } catch {
+        applyUrl = rawHref;
+      }
+    }
+  }
+
+  const linkedinUrl = `https://www.linkedin.com/jobs/view/${jobId}/`;
+  return {
+    ...cardData,
+    jobId,
+    linkedinUrl,
+    applyUrl,
+    applyType,
+    description,
+    aboutCompany,
+    missingAboutCompanySection: aboutCompanyContext.missingSection
+  };
+}
+
 function waitForNewCards(leftPanel) {
   return new Promise(resolve => {
     // Snapshot the componentkey of the first card to detect page change
@@ -222,12 +280,30 @@ function sanitizeFilename(company, title, jobId) {
   return `${base}_${jobId}.md`;
 }
 
-function formatMarkdown({ title, company, location, salary, datePosted, applyType, applyUrl, jobId, description }) {
+function formatMarkdown({
+  title,
+  company,
+  location,
+  salary,
+  datePosted,
+  applyType,
+  applyUrl,
+  linkedinUrl,
+  jobId,
+  description,
+  aboutCompany,
+  missingAboutCompanySection
+}) {
+  const aboutCompanySection = formatAboutCompanySection(aboutCompany, {
+    missingAboutCompany: missingAboutCompanySection
+  });
+
   return `# ${title}
 **Company:** ${company}
 **Location:** ${location}
 **Salary:** ${salary}
 **Date Posted:** ${datePosted}
+**LinkedIn Post:** [View on LinkedIn](${linkedinUrl})
 **Apply:** [${applyType}](${applyUrl})
 **Job ID:** ${jobId}
 
@@ -236,6 +312,12 @@ function formatMarkdown({ title, company, location, salary, datePosted, applyTyp
 ## About the Job
 
 ${description}
+
+---
+
+## About the company
+
+${aboutCompanySection}
 `;
 }
 

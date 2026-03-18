@@ -37,7 +37,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       try {
         await chrome.scripting.executeScript({
           target: { tabId: activeTabId },
-          files: ["content_script.js"]
+          files: ["retry_policy.js", "description_utils.js", "content_script.js"]
         });
       } catch (e) {
         // Already injected or can't inject — proceed anyway
