@@ -18,6 +18,16 @@ test("buildMarkdownDataUrl encodes unicode markdown content", () => {
   assert.equal(decoded, "# Role\nCompany: Caf\u00e9");
 });
 
+test("buildMarkdownDataUrl preserves content larger than one encoding chunk", () => {
+  const largeContent = "Role details ".repeat(2000);
+
+  const dataUrl = buildMarkdownDataUrl(largeContent);
+  const encoded = dataUrl.replace("data:text/markdown;base64,", "");
+  const decoded = Buffer.from(encoded, "base64").toString("utf8");
+
+  assert.equal(decoded, largeContent);
+});
+
 test("shouldRetryDownload allows retries within the timeout budget", () => {
   const result = shouldRetryDownload({
     startedAt: 1000,

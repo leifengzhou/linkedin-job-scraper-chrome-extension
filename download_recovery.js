@@ -1,13 +1,14 @@
 (function (root) {
   function buildMarkdownDataUrl(content) {
     const bytes = new TextEncoder().encode(content);
-    let b64 = "";
     const chunkSize = 8192;
+    const binaryChunks = [];
 
     for (let i = 0; i < bytes.length; i += chunkSize) {
-      b64 += btoa(String.fromCharCode(...bytes.slice(i, i + chunkSize)));
+      binaryChunks.push(String.fromCharCode(...bytes.slice(i, i + chunkSize)));
     }
 
+    const b64 = btoa(binaryChunks.join(""));
     return "data:text/markdown;base64," + b64;
   }
 
