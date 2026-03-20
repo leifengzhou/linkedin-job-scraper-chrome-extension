@@ -9,6 +9,8 @@ A Chrome Extension (Manifest V3) that scrapes LinkedIn job search results and sa
 - Unwraps LinkedIn redirect URLs to get direct company apply links
 - Saves each job as a clean Markdown file organized by date
 - Start/stop control via extension popup with live progress updates
+- Automatically retries interrupted downloads for up to 5 seconds
+- Logs unrecoverable download failures to extension storage for inspection
 - Handles pagination automatically
 
 ## Installation
@@ -54,7 +56,7 @@ Full job description text...
 manifest.json       → MV3 config; permissions: downloads, tabs, storage, scripting
 popup.html/js       → Extension popup UI; start/stop control; progress display
 content_script.js   → Core scraper; runs in LinkedIn tab; DOM interaction + data extraction
-background.js       → Service worker; handles chrome.downloads API (required by MV3)
+background.js       → Service worker; handles chrome.downloads API, retry recovery, and failure logging
 ```
 
 ### How It Works
@@ -64,7 +66,31 @@ background.js       → Service worker; handles chrome.downloads API (required b
 3. For each card, it snapshots the URL and description *before* clicking, then waits for both to change — this prevents reading stale data from the previous job
 4. Job metadata (title, company, location, salary) is extracted from the left panel card; the full description and apply link come from the right panel
 5. Each job is formatted as Markdown and sent to the **background service worker**, which saves it via `chrome.downloads`
-6. After all cards on a page, it clicks the next-page button and repeats
+6. If Chrome interrupts a download, the background worker retries it with a fresh download for up to 5 seconds total
+7. If recovery still fails, the worker logs the failure to `chrome.storage.local.failedDownloads` and the popup shows the failed count
+8. After all cards on a page, it clicks the next-page button and repeats
+
+## Failed Download Logs
+
+Unrecoverable download failures are stored in `chrome.storage.local` under the `failedDownloads` key.
+
+To inspect them:
+
+1. Open `chrome://extensions`
+2. Enable **Developer mode**
+3. Find the extension and click the `service worker` link
+4. In DevTools, open `Application` -> `Storage` -> `Extension storage` -> `chrome.storage.local`
+5. Inspect `failedDownloads`
+
+## Manual Verification
+
+- Reload the unpacked extension
+- Refresh the LinkedIn Jobs tab
+- Start a scrape from the popup
+- Confirm progress updates, pagination behavior, and Markdown downloads in `~/Downloads/scraped-jobs/YYYY-MM-DD/`
+- Confirm healthy downloads do not incur a fixed 5-second delay
+- Confirm interrupted downloads retry automatically for up to 5 seconds
+- Confirm unrecoverable failures increment the popup failed count and appear in `chrome.storage.local.failedDownloads`
 
 ## Limitations
 

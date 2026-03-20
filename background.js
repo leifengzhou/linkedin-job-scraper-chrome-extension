@@ -1,15 +1,155 @@
+importScripts("download_recovery.js");
+
+const {
+  buildFailedDownloadRecord,
+  buildMarkdownDataUrl,
+  formatDownloadHealthMessage,
+  shouldRetryDownload,
+  trimFailedDownloads
+} = globalThis.LinkedInScraperDownloadRecovery;
+
+const FAILED_DOWNLOADS_KEY = "failedDownloads";
+const RETRY_BACKOFF_MS = 500;
+const pendingDownloads = new Map();
+let nextRequestId = 1;
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "download") {
-    const bytes = new TextEncoder().encode(msg.content);
-    // Chunked encoding avoids stack overflow for large job descriptions
-    let b64 = '';
-    const chunkSize = 8192;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      b64 += btoa(String.fromCharCode(...bytes.slice(i, i + chunkSize)));
-    }
-    const dataUrl = "data:text/markdown;base64," + b64;
-    chrome.downloads.download({ url: dataUrl, filename: msg.filename, saveAs: false });
-    sendResponse({});
+    handleDownloadRequest(msg, sendResponse);
     return true;
   }
 });
+
+chrome.downloads.onChanged.addListener((delta) => {
+  if (typeof delta.id !== "number") {
+    return;
+  }
+
+  const entry = pendingDownloads.get(delta.id);
+  if (!entry || entry.settled) {
+    return;
+  }
+
+  if (delta.state?.current === "complete") {
+    pendingDownloads.delete(delta.id);
+    settleSuccess(entry);
+    return;
+  }
+
+  if (delta.state?.current === "interrupted") {
+    pendingDownloads.delete(delta.id);
+    void retryOrFailDownload(entry, delta.error?.current || "Download interrupted");
+  }
+});
+
+async function handleDownloadRequest(msg, sendResponse) {
+  const entry = {
+    requestId: nextRequestId++,
+    filename: msg.filename,
+    content: msg.content,
+    attempts: 0,
+    retryStartedAt: null,
+    timeoutMs: msg.timeoutMs || 5000,
+    sendResponse,
+    settled: false
+  };
+
+  try {
+    await startDownloadAttempt(entry);
+  } catch (error) {
+    await settleFailure(entry, error.message || "Download failed to start");
+  }
+}
+
+async function startDownloadAttempt(entry) {
+  entry.attempts += 1;
+
+  const downloadId = await chrome.downloads.download({
+    url: buildMarkdownDataUrl(entry.content),
+    filename: entry.filename,
+    saveAs: false
+  });
+
+  entry.downloadId = downloadId;
+  pendingDownloads.set(downloadId, entry);
+}
+
+async function retryOrFailDownload(entry, errorMessage) {
+  if (entry.retryStartedAt == null) {
+    entry.retryStartedAt = Date.now();
+  }
+
+  if (!shouldRetryDownload({
+    startedAt: entry.retryStartedAt,
+    timeoutMs: entry.timeoutMs
+  })) {
+    await settleFailure(entry, `Download recovery timed out after ${entry.timeoutMs}ms (${errorMessage})`);
+    return;
+  }
+
+  console.warn(
+    `[LinkedInScraper] Retrying download for ${entry.filename} after interruption: ${errorMessage}`
+  );
+
+  await sleep(RETRY_BACKOFF_MS);
+
+  try {
+    await startDownloadAttempt(entry);
+  } catch (error) {
+    await settleFailure(entry, error.message || "Download retry failed to start");
+  }
+}
+
+async function settleSuccess(entry) {
+  if (entry.settled) {
+    return;
+  }
+
+  entry.settled = true;
+  entry.sendResponse({
+    ok: true,
+    recovered: entry.attempts > 1,
+    attempts: entry.attempts
+  });
+}
+
+async function settleFailure(entry, errorMessage) {
+  if (entry.settled) {
+    return;
+  }
+
+  entry.settled = true;
+  const record = buildFailedDownloadRecord(entry, errorMessage);
+  await appendFailedDownload(record);
+  console.error(`[LinkedInScraper] Download failed for ${entry.filename}: ${errorMessage}`);
+  entry.sendResponse({
+    ok: false,
+    recovered: entry.attempts > 1,
+    attempts: entry.attempts,
+    error: errorMessage
+  });
+}
+
+async function appendFailedDownload(record) {
+  const failedDownloads = await getFailedDownloads();
+  const nextFailedDownloads = trimFailedDownloads([...failedDownloads, record], 100);
+  await chrome.storage.local.set({ [FAILED_DOWNLOADS_KEY]: nextFailedDownloads });
+  broadcastDownloadStatusChanged(nextFailedDownloads.length);
+}
+
+async function getFailedDownloads() {
+  const result = await chrome.storage.local.get(FAILED_DOWNLOADS_KEY);
+  return Array.isArray(result[FAILED_DOWNLOADS_KEY]) ? result[FAILED_DOWNLOADS_KEY] : [];
+}
+
+function broadcastDownloadStatusChanged(failedCount) {
+  chrome.runtime.sendMessage({
+    action: "downloadStatusChanged",
+    failedCount,
+    message: formatDownloadHealthMessage(failedCount)
+  }).catch(() => {});
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

@@ -1,9 +1,11 @@
 let isRunning = false;
 let activeTabId = null;
+const { formatDownloadHealthMessage } = globalThis.LinkedInScraperDownloadRecovery || {};
 
 document.addEventListener("DOMContentLoaded", async () => {
   const statusEl = document.getElementById("status");
   const progressEl = document.getElementById("progress");
+  const downloadHealthEl = document.getElementById("downloadHealth");
   const btn = document.getElementById("btn");
 
   // Get active tab
@@ -25,6 +27,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Check for in-progress scrape
   const { scrapeState } = await chrome.storage.local.get("scrapeState");
+  const { failedDownloads = [] } = await chrome.storage.local.get("failedDownloads");
+  renderDownloadHealth(failedDownloads.length);
   if (scrapeState && scrapeState.running) {
     setScrapingState(scrapeState.scraped, scrapeState.page);
   } else {
@@ -70,6 +74,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     } else if (msg.action === "done") {
       setDoneState(msg.total, msg.folder);
+    } else if (msg.action === "downloadStatusChanged") {
+      renderDownloadHealth(msg.failedCount || 0, msg.message);
     }
   });
 
@@ -101,5 +107,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     btn.textContent = "▶ Start Scraping";
     btn.disabled = false;
     btn.classList.remove("stop");
+  }
+
+  function renderDownloadHealth(failedCount, message) {
+    const fallbackMessage = typeof formatDownloadHealthMessage === "function"
+      ? formatDownloadHealthMessage(failedCount)
+      : (failedCount ? `Failed downloads: ${failedCount} (see chrome.storage.local)` : "");
+    downloadHealthEl.textContent = message || fallbackMessage;
+    downloadHealthEl.classList.toggle("error", failedCount > 0);
   }
 });

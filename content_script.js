@@ -138,7 +138,37 @@ async function scrapeCurrentPage(cards, today, pageNum, alreadyScraped) {
     const filename = `scraped-jobs/${today}/${filenameBase}`;
 
     console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Saving: ${filename}`);
-    chrome.runtime.sendMessage({ action: "download", filename, content: markdown });
+    let downloadResult;
+    try {
+      downloadResult = await chrome.runtime.sendMessage({
+        action: "download",
+        filename,
+        content: markdown,
+        timeoutMs: 5000
+      });
+    } catch (error) {
+      downloadResult = {
+        ok: false,
+        error: error.message || "Download request failed"
+      };
+    }
+
+    if (!downloadResult?.ok) {
+      console.error(
+        `[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Download failed for ${filename}: ${downloadResult?.error || 'Unknown error'}`
+      );
+      chrome.runtime.sendMessage({
+        action: "progress",
+        scraped: alreadyScraped + scraped,
+        total: cards.length,
+        page: pageNum,
+        error: `Download failed for ${filenameBase}. See extension storage for details.`
+      });
+    } else if (downloadResult.recovered) {
+      console.warn(
+        `[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Download recovered after ${downloadResult.attempts} attempts`
+      );
+    }
 
     scraped++;
     chrome.storage.local.set({ scrapeState: { running: true, scraped: alreadyScraped + scraped, page: pageNum } });
