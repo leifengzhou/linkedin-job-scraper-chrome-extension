@@ -2,27 +2,32 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
-  buildMarkdownDataUrl,
+  buildDownloadDataUrl,
   buildFailedDownloadRecord,
   formatDownloadHealthMessage,
   shouldRetryDownload,
   trimFailedDownloads
 } = require("../download_recovery.js");
 
-test("buildMarkdownDataUrl encodes unicode markdown content", () => {
-  const dataUrl = buildMarkdownDataUrl("# Role\nCompany: Caf\u00e9");
+test("buildDownloadDataUrl encodes unicode JSON content with the requested mime type", () => {
+  const dataUrl = buildDownloadDataUrl("{\"company\":\"Caf\u00e9\"}", "application/json");
 
-  assert.match(dataUrl, /^data:text\/markdown;base64,/);
-  const encoded = dataUrl.replace("data:text/markdown;base64,", "");
+  assert.match(dataUrl, /^data:application\/json;base64,/);
+  const encoded = dataUrl.replace("data:application/json;base64,", "");
   const decoded = Buffer.from(encoded, "base64").toString("utf8");
-  assert.equal(decoded, "# Role\nCompany: Caf\u00e9");
+  assert.equal(decoded, "{\"company\":\"Caf\u00e9\"}");
 });
 
-test("buildMarkdownDataUrl preserves content larger than one encoding chunk", () => {
-  const largeContent = "Role details ".repeat(2000);
+test("buildDownloadDataUrl preserves content larger than one encoding chunk", () => {
+  const largeContent = JSON.stringify({
+    jobs: Array.from({ length: 1500 }, (_, index) => ({
+      jobId: String(index),
+      title: `Role ${index}`
+    }))
+  });
 
-  const dataUrl = buildMarkdownDataUrl(largeContent);
-  const encoded = dataUrl.replace("data:text/markdown;base64,", "");
+  const dataUrl = buildDownloadDataUrl(largeContent, "application/json");
+  const encoded = dataUrl.replace("data:application/json;base64,", "");
   const decoded = Buffer.from(encoded, "base64").toString("utf8");
 
   assert.equal(decoded, largeContent);

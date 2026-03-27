@@ -1,392 +1,734 @@
 // Idempotency guard — safe to re-inject via chrome.scripting.executeScript
-if (window.__linkedInScraperLoaded) {
-  console.log('[LinkedInScraper] Already loaded, skipping re-init');
+const {
+  cleanupStaleControls,
+  createBootstrapMarker,
+  shouldBootstrapContentScript
+} = globalThis.LinkedInScraperBootstrap;
+const currentRuntimeId = chrome.runtime.id;
+
+if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntimeId)) {
+  console.log("[LinkedInScraper] Already loaded, skipping re-init");
 } else {
-window.__linkedInScraperLoaded = true;
+  cleanupStaleControls(document);
+  window.__linkedInScraperLoaded = createBootstrapMarker(currentRuntimeId);
 
-let isStopped = false;
-let isRunning = false;
-const { collectJobDataWithRetries } = globalThis.LinkedInScraperRetryPolicy;
-const { findSectionContext, formatAboutCompanySection, readSectionText } = globalThis.LinkedInScraperDescriptionUtils;
+  let isRunning = false;
+  let stopRequested = false;
+  let runDate = null;
+  let controls = null;
+  let exportBuffer = null;
 
-console.log('[LinkedInScraper] Content script loaded on', location.href);
+  const {
+    appendExportFailure,
+    appendExportJob,
+    buildExportJobRecord,
+    buildJsonExportPayload,
+    createJsonExportBuffer
+  } = globalThis.LinkedInScraperJsonExport;
+  const {
+    collectJobDataWithRetries
+  } = globalThis.LinkedInScraperRetryPolicy;
+  const {
+    buildControlsViewModel,
+    createControlsDom,
+    renderControls,
+    showChip,
+    showModal
+  } = globalThis.LinkedInScraperInPageControls;
+  const {
+    createScrapeSession,
+    getPendingTerminalState,
+    getProcessedCount,
+    finishRun,
+    markPageContext,
+    markPaused,
+    recordJobResult,
+    requestPause,
+    resolveResumeIndex,
+    resumeRun,
+    setDetailText,
+    setTargetCount,
+    setModalOpen,
+    startRun,
+    stopRun
+  } = globalThis.LinkedInScraperSession;
+  const {
+    findSectionContext,
+    readSectionText
+  } = globalThis.LinkedInScraperDescriptionUtils;
+  const session = createScrapeSession();
+  exportBuffer = createJsonExportBuffer();
 
-chrome.runtime.onMessage.addListener((msg) => {
-  console.log('[LinkedInScraper] Message received:', msg.action);
-  if (msg.action === "start") {
-    if (isRunning) { console.log('[LinkedInScraper] Already running, ignoring start'); return; }
-    isStopped = false;
-    scrapeAllPages();
-  } else if (msg.action === "stop") {
-    isStopped = true;
-  }
-});
+  console.log("[LinkedInScraper] Content script loaded on", location.href);
 
-window.addEventListener("pagehide", () => { isStopped = true; });
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    console.log("[LinkedInScraper] Message received:", msg.action);
 
-async function scrapeAllPages() {
-  isRunning = true;
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  let pageNum = 1;
-  let totalScraped = 0;
-
-  while (!isStopped) {
-    // Left panel is [data-component-type="LazyColumn"]
-    const leftPanel = document.querySelector('[data-component-type="LazyColumn"]');
-    if (!leftPanel) {
-      console.error('[LinkedInScraper] Left panel not found');
-      chrome.runtime.sendMessage({ action: "progress", scraped: totalScraped, page: pageNum, error: "Job list panel not found on this page" });
-      break;
+    if (msg.action === "ping") {
+      sendResponse({ ok: true });
+      return;
     }
 
-    // Job cards: div[role="button"] elements that contain a "Dismiss X job" button
-    const allRoleBtns = Array.from(leftPanel.querySelectorAll('div[role="button"][componentkey]'));
-    const cards = allRoleBtns.filter(el => el.querySelector('button[aria-label^="Dismiss"]'));
-
-    console.log('[LinkedInScraper] Found', cards.length, 'cards on page', pageNum);
-
-    if (cards.length === 0) {
-      chrome.runtime.sendMessage({ action: "progress", scraped: totalScraped, page: pageNum, error: "No job listings found on this page" });
-      break;
+    if (msg.action === "openControls") {
+      openControls();
+      return;
     }
 
-    const scraped = await scrapeCurrentPage(cards, today, pageNum, totalScraped);
-    totalScraped += scraped;
-
-    if (isStopped) break;
-
-    // Pagination — stable data-testid attribute
-    const nextBtn = document.querySelector('button[data-testid="pagination-controls-next-button-visible"]');
-    if (!nextBtn || nextBtn.disabled) break;
-
-    nextBtn.click();
-    await waitForNewCards(leftPanel);
-    pageNum++;
-  }
-
-  isRunning = false;
-  const folder = `scraped-jobs/${today}`;
-  chrome.storage.local.remove('scrapeState');
-  chrome.runtime.sendMessage({ action: "done", total: totalScraped, folder });
-}
-
-async function scrapeCurrentPage(cards, today, pageNum, alreadyScraped) {
-  let scraped = 0;
-
-  for (const [cardIndex, card] of cards.entries()) {
-    if (isStopped) break;
-
-    const cardData = extractCardData(card);
-    console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Card: "${cardData.title}" @ ${cardData.company}`);
-
-    // Snapshot state BEFORE click
-    const prevJobId = new URLSearchParams(window.location.search).get('currentJobId') || '';
-    const prevDescText = document.querySelector('[data-testid="expandable-text-box"]')?.innerText || '';
-
-    card.click();
-
-    // 1. Wait for URL to update (proves LinkedIn registered the click)
-    const newJobId = await waitForJobIdChange(prevJobId, 3000);
-    if (newJobId) {
-      // 2. URL changed — wait for description content to actually swap
-      await waitForDescriptionChange(prevDescText, 5000);
-      console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] URL: ${prevJobId} → ${newJobId}`);
-    } else {
-      // First card or already selected — ensure description panel is loaded
-      await waitForDescriptionChange('', 3000);
-      console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] URL unchanged (job may already be selected)`);
+    if (msg.action === "start") {
+      openControls();
+      handleStartResumeClick();
+      return;
     }
 
-    const jobId = new URLSearchParams(window.location.search).get('currentJobId') || '';
-    if (!jobId) {
-      console.warn(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] No currentJobId — skipping`);
-      continue;
+    if (msg.action === "stop") {
+      handleStopClick();
+    }
+  });
+
+  window.addEventListener("pagehide", () => {
+    stopRequested = true;
+  });
+
+  function ensureControls() {
+    if (controls) {
+      return controls;
     }
 
-    const retryResult = await collectJobDataWithRetries({
-      maxRetries: 10,
-      collect: async (attemptNumber) => {
-        if (attemptNumber > 1) {
-          console.warn(
-            `[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Missing critical fields on attempt ${attemptNumber - 1} — retrying after ${attemptNumber - 1}s`
-          );
-          card.click();
-          await sleep(300);
-        }
+    controls = createControlsDom(document);
+    const mountTarget = document.body || document.documentElement;
+    mountTarget.appendChild(controls.rootEl);
 
-        return collectCurrentJobData(card, jobId);
-      },
-      sleep
+    controls.startButtonEl.addEventListener("click", () => {
+      handleStartResumeClick();
+    });
+    controls.pauseButtonEl.addEventListener("click", () => {
+      handlePauseClick();
+    });
+    controls.stopButtonEl.addEventListener("click", () => {
+      handleStopClick();
+    });
+    controls.downloadButtonEl.addEventListener("click", () => {
+      void handleDownloadClick();
+    });
+    controls.targetInputEl.addEventListener("change", () => {
+      handleTargetChange();
+    });
+    controls.closeButtonEl.addEventListener("click", () => {
+      closeControlsToChip();
+    });
+    controls.chipEl.addEventListener("click", () => {
+      openControls();
     });
 
-    const { jobData, missingFields } = retryResult;
+    renderSession();
+    return controls;
+  }
 
-    // Mismatch warning: if card company doesn't appear in first 200 chars of description
-    const descSnippet = jobData.description.slice(0, 80);
-    if (jobData.company && !jobData.description.slice(0, 200).toLowerCase().includes(jobData.company.toLowerCase())) {
-      console.warn(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] ⚠ Company "${jobData.company}" not in description start — possible stale panel`);
+  function openControls() {
+    ensureControls();
+    setModalOpen(session, true);
+    renderSession();
+  }
+
+  function closeControlsToChip() {
+    if (!controls) {
+      return;
     }
-    console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Desc: "${descSnippet}..."`);
 
-    let filenameBase = sanitizeFilename(jobData.company, jobData.title, jobId);
-    if (missingFields.length > 0) {
-      console.warn(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Missing fields: ${missingFields.join(', ')} — saving with warning prefix`);
-      filenameBase = `EMPTY_FIELD_DETECTED_${filenameBase}`;
+    setModalOpen(session, false);
+    renderSession();
+  }
+
+  function renderSession() {
+    if (!controls) {
+      return;
     }
 
-    const markdown = formatMarkdown(jobData);
-    const filename = `scraped-jobs/${today}/${filenameBase}`;
+    const viewModel = buildControlsViewModel(session);
+    renderControls(controls, viewModel, session);
 
-    console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Saving: ${filename}`);
-    let downloadResult;
+    if (session.isModalOpen) {
+      showModal(controls);
+    } else {
+      showChip(controls);
+    }
+  }
+
+  function handleStartResumeClick() {
+    openControls();
+
+    if (isRunning) {
+      return;
+    }
+
+    stopRequested = false;
+
+    if (session.status === "paused") {
+      resumeRun(session);
+    } else {
+      runDate = new Date().toISOString().slice(0, 10);
+      exportBuffer = createJsonExportBuffer();
+      startRun(session);
+    }
+
+    renderSession();
+    void scrapeAllPages();
+  }
+
+  function handlePauseClick() {
+    requestPause(session);
+    renderSession();
+  }
+
+  function handleStopClick() {
+    if (isRunning) {
+      stopRequested = true;
+    } else {
+      stopRun(session);
+      setDetailText(session, "Run stopped.");
+    }
+    renderSession();
+  }
+
+  function handleTargetChange() {
+    setTargetCount(session, controls?.targetInputEl?.value || session.targetCount);
+    renderSession();
+  }
+
+  async function scrapeAllPages() {
+    if (isRunning) {
+      return;
+    }
+
+    isRunning = true;
+    let pageNum = session.page || 1;
+
     try {
-      downloadResult = await chrome.runtime.sendMessage({
-        action: "download",
-        filename,
-        content: markdown,
+      while (!stopRequested) {
+        const leftPanel = document.querySelector('[data-component-type="LazyColumn"]');
+        if (!leftPanel) {
+          setRunError("Job list panel not found on this page.");
+          return;
+        }
+
+        const allRoleButtons = Array.from(leftPanel.querySelectorAll('div[role="button"][componentkey]'));
+        const cards = allRoleButtons.filter((el) => el.querySelector('button[aria-label^="Dismiss"]'));
+
+        console.log("[LinkedInScraper] Found", cards.length, "cards on page", pageNum);
+
+        if (cards.length === 0) {
+          setRunError("No job listings found on this page.");
+          return;
+        }
+
+        const startIndex = pageNum === session.page
+          ? resolveResumeIndex(cards.map(getCardKey), session)
+          : 0;
+        markPageContext(session, {
+          page: pageNum,
+          currentPageTotal: cards.length,
+          currentCardIndex: startIndex,
+          resumeFromIndex: startIndex,
+          resumeCardKey: getCardKey(cards[startIndex]) || null
+        });
+        renderSession();
+
+        const pageResult = await scrapeCurrentPage(cards, pageNum, startIndex);
+        if (pageResult === "paused" || pageResult === "error") {
+          return;
+        }
+
+        if (pageResult === "stopped" || pageResult === "done") {
+          return;
+        }
+
+        const boundaryState = applyPostJobState();
+        if (boundaryState) {
+          return;
+        }
+
+        const nextBtn = document.querySelector('button[data-testid="pagination-controls-next-button-visible"]');
+        if (!nextBtn || nextBtn.disabled) {
+          stopRun(session);
+          setDetailText(session, "Reached end of results before target.");
+          renderSession();
+          return;
+        }
+
+        nextBtn.click();
+        await waitForNewCards(leftPanel);
+        pageNum += 1;
+        markPageContext(session, {
+          page: pageNum,
+          currentPageTotal: 0,
+          currentCardIndex: 0,
+          resumeFromIndex: 0
+        });
+        renderSession();
+      }
+
+      stopRun(session);
+      setDetailText(session, "Run stopped.");
+      renderSession();
+    } catch (error) {
+      console.error("[LinkedInScraper] Unexpected scrape error:", error);
+      setRunError(error.message || "Unexpected scrape error.");
+    } finally {
+      isRunning = false;
+    }
+  }
+
+  async function scrapeCurrentPage(cards, pageNum, startIndex) {
+    for (let cardIndex = startIndex; cardIndex < cards.length; cardIndex += 1) {
+      if (stopRequested) {
+        return "stopped";
+      }
+
+      const card = cards[cardIndex];
+      const cardData = extractCardData(card);
+      const jobLabel = formatJobLabel(cardData);
+      session.currentJobLabel = jobLabel;
+      markPageContext(session, {
+        page: pageNum,
+        currentPageTotal: cards.length,
+        currentCardIndex: cardIndex,
+        resumeFromIndex: cardIndex,
+        resumeCardKey: getCardKey(card)
+      });
+      renderSession();
+      console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Card: "${cardData.title}" @ ${cardData.company}`);
+
+      const prevJobId = new URLSearchParams(window.location.search).get("currentJobId") || "";
+      const prevDescText = document.querySelector('[data-testid="expandable-text-box"]')?.innerText || "";
+
+      card.click();
+
+      const newJobId = await waitForJobIdChange(prevJobId, 3000);
+      if (newJobId) {
+        await waitForDescriptionChange(prevDescText, 5000);
+        console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] URL: ${prevJobId} → ${newJobId}`);
+      } else {
+        await waitForDescriptionChange("", 3000);
+        console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] URL unchanged (job may already be selected)`);
+      }
+
+      const jobId = new URLSearchParams(window.location.search).get("currentJobId") || "";
+      if (!jobId) {
+        console.warn(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] No currentJobId — skipping`);
+        recordExtractionFailure(jobLabel, "No currentJobId");
+        markPageContext(session, {
+          page: pageNum,
+          currentPageTotal: cards.length,
+          currentCardIndex: cardIndex,
+          resumeFromIndex: cardIndex + 1,
+          resumeCardKey: getCardKey(cards[cardIndex + 1]) || null
+        });
+        renderSession();
+
+        const terminalState = applyPostJobState();
+        if (terminalState) {
+          return terminalState;
+        }
+
+        continue;
+      }
+
+      let retryResult;
+      try {
+        retryResult = await collectJobDataWithRetries({
+          maxRetries: 10,
+          collect: async (attemptNumber) => {
+            if (attemptNumber > 1) {
+              console.warn(
+                `[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Missing critical fields on attempt ${attemptNumber - 1} — retrying after ${attemptNumber - 1}s`
+              );
+              card.click();
+              await sleep(300);
+            }
+
+            return collectCurrentJobData(card, jobId);
+          },
+          sleep
+        });
+      } catch (error) {
+        console.error(
+          `[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Extraction failed for ${jobLabel}: ${error.message || "Unknown error"}`
+        );
+        recordExtractionFailure(jobLabel, error.message || "Job extraction failed");
+        markPageContext(session, {
+          page: pageNum,
+          currentPageTotal: cards.length,
+          currentCardIndex: cardIndex,
+          resumeFromIndex: cardIndex + 1,
+          resumeCardKey: getCardKey(cards[cardIndex + 1]) || null
+        });
+        renderSession();
+
+        const terminalState = applyPostJobState();
+        if (terminalState) {
+          return terminalState;
+        }
+
+        await sleep(500);
+        continue;
+      }
+
+      const { jobData, missingFields, exhaustedRetries } = retryResult;
+      if (!jobData) {
+        console.error(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] No usable job object produced`);
+        recordExtractionFailure(jobLabel, "No usable job object");
+      } else {
+        const descSnippet = (jobData.description || "").slice(0, 80);
+        if (
+          jobData.company &&
+          jobData.description &&
+          !jobData.description.slice(0, 200).toLowerCase().includes(jobData.company.toLowerCase())
+        ) {
+          console.warn(
+            `[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Company "${jobData.company}" not in description start — possible stale panel`
+          );
+        }
+        console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Desc: "${descSnippet}..."`);
+
+        if (missingFields.length > 0) {
+          console.warn(
+            `[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Missing fields: ${missingFields.join(", ")} — storing partial job`
+          );
+        }
+
+        appendExportJob(exportBuffer, buildExportJobRecord(normalizeJobForExport(jobData), {
+          missingFields,
+          exhaustedRetries
+        }));
+        recordJobResult(session, {
+          ok: true,
+          label: jobLabel
+        });
+      }
+
+      markPageContext(session, {
+        page: pageNum,
+        currentPageTotal: cards.length,
+        currentCardIndex: cardIndex,
+        resumeFromIndex: cardIndex + 1,
+        resumeCardKey: getCardKey(cards[cardIndex + 1]) || null
+      });
+      renderSession();
+
+      const terminalState = applyPostJobState();
+      if (terminalState) {
+        return terminalState;
+      }
+
+      await sleep(500);
+    }
+
+    markPageContext(session, {
+      page: pageNum,
+      currentPageTotal: cards.length,
+      currentCardIndex: cards.length,
+      resumeFromIndex: 0,
+      resumeCardKey: null
+    });
+    renderSession();
+    return "complete";
+  }
+
+  function setRunError(message) {
+    stopRun(session);
+    session.currentJobLabel = message;
+    setDetailText(session, `Stopped with an error. ${message}`);
+    session.events = session.events.concat({
+      ok: false,
+      label: message,
+      error: ""
+    }).slice(-20);
+    renderSession();
+  }
+
+  function applyPostJobState() {
+    const terminalState = getPendingTerminalState(session, { stopRequested });
+
+    if (terminalState === "done") {
+      finishRun(session);
+      setDetailText(session, `Target reached at ${getProcessedCount(session)} processed jobs.`);
+      renderSession();
+      return "done";
+    }
+
+    if (terminalState === "stopped") {
+      stopRun(session);
+      setDetailText(session, "Run stopped.");
+      renderSession();
+      return "stopped";
+    }
+
+    if (terminalState === "paused") {
+      markPaused(session);
+      setDetailText(session, "");
+      renderSession();
+      return "paused";
+    }
+
+    return null;
+  }
+
+  async function handleDownloadClick() {
+    if (!["paused", "stopped", "done"].includes(session.status)) {
+      return false;
+    }
+
+    const exportDate = runDate || new Date().toISOString().slice(0, 10);
+    const payload = buildJsonExportPayload({
+      runDate: exportDate,
+      buffer: exportBuffer
+    });
+    let exportResult;
+
+    try {
+      exportResult = await chrome.runtime.sendMessage({
+        action: "downloadJsonExport",
+        filename: `scraped-jobs-${exportDate}.json`,
+        payload,
         timeoutMs: 5000
       });
     } catch (error) {
-      downloadResult = {
+      exportResult = {
         ok: false,
-        error: error.message || "Download request failed"
+        error: error.message || "Export request failed"
       };
     }
 
-    if (!downloadResult?.ok) {
-      console.error(
-        `[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Download failed for ${filename}: ${downloadResult?.error || 'Unknown error'}`
-      );
-      chrome.runtime.sendMessage({
-        action: "progress",
-        scraped: alreadyScraped + scraped,
-        total: cards.length,
-        page: pageNum,
-        error: `Download failed for ${filenameBase}. See extension storage for details.`
-      });
-    } else if (downloadResult.recovered) {
-      console.warn(
-        `[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Download recovered after ${downloadResult.attempts} attempts`
-      );
+    if (!exportResult?.ok) {
+      setDetailText(session, `Export failed: ${exportResult?.error || "Unknown error"}`);
+      renderSession();
+      return false;
     }
 
-    scraped++;
-    chrome.storage.local.set({ scrapeState: { running: true, scraped: alreadyScraped + scraped, page: pageNum } });
-    chrome.runtime.sendMessage({ action: "progress", scraped: alreadyScraped + scraped, total: cards.length, page: pageNum });
-
-    await sleep(500);
+    setDetailText(
+      session,
+      [
+        "Download started.",
+        `Saved ${session.savedCount}.`,
+        `Failed ${session.failedCount}.`,
+        exportBuffer.partialCount > 0 ? `Partial ${exportBuffer.partialCount}.` : ""
+      ].filter(Boolean).join(" ")
+    );
+    renderSession();
+    return true;
   }
 
-  return scraped;
-}
+  function recordExtractionFailure(label, error) {
+    appendExportFailure(exportBuffer, {
+      label,
+      error
+    });
+    recordJobResult(session, {
+      ok: false,
+      label,
+      error
+    });
+  }
 
-function extractCardData(card) {
-  // Title: dismiss button aria-label is stable ("Dismiss {title} job")
-  const dismissBtn = card.querySelector('button[aria-label^="Dismiss"]');
-  let title = dismissBtn
-    ? dismissBtn.getAttribute('aria-label').replace(/^Dismiss\s+/, '').replace(/\s+job$/, '').trim()
-    : '';
-  title = title.replace(/\s*\(Verified job\)\s*$/, '').trim();
+  function formatJobLabel(cardData) {
+    const company = cardData.company || "Unknown company";
+    const title = cardData.title || "Unknown title";
+    return `${company} - ${title}`;
+  }
 
-  // Company and Location: structural siblings of the title <p>
-  // Find the title <p> by checking if its text includes the title from the dismiss button.
-  // Verified jobs have dual spans (screen-reader + visual) that duplicate the title text,
-  // so exact matching fails — includes() handles both verified and non-verified cards.
-  const titleP = title
-    ? Array.from(card.querySelectorAll('p')).find(p => p.textContent.includes(title))
-    : null;
-  // Company is in the div immediately after the title paragraph (contains a <p>)
-  const companyDiv = titleP?.nextElementSibling;
-  const company = companyDiv?.querySelector('p')?.textContent.trim() || '';
-  // Location is the <p> after the company div
-  const location = companyDiv?.nextElementSibling?.textContent.trim() || '';
+  function getCardKey(card) {
+    return card?.getAttribute("componentkey") || null;
+  }
 
-  // Date: first span anywhere in the card whose text starts with "Posted on"
-  const dateSpan = Array.from(card.querySelectorAll('span')).find(s => s.textContent.trim().startsWith('Posted on'));
-  const datePosted = dateSpan?.textContent.replace(/^Posted on\s*/, '').trim() || '';
+  function normalizeJobForExport(jobData) {
+    return {
+      title: jobData.title || "",
+      company: jobData.company || "",
+      location: jobData.location || "",
+      salary: jobData.salary || "",
+      datePosted: jobData.datePosted || "",
+      applyType: jobData.applyType || "",
+      applyUrl: jobData.applyUrl || "",
+      linkedinUrl: jobData.linkedinUrl || "",
+      jobId: jobData.jobId || "",
+      description: jobData.description || "",
+      aboutCompany: jobData.aboutCompany || ""
+    };
+  }
 
-  // Salary: <p> matching a salary pattern (may not be present)
-  const allPs = card.querySelectorAll('p');
-  const salaryP = Array.from(allPs).find(p => /\$[\d,.]+[KM]?\/yr/.test(p.textContent));
-  const salary = salaryP?.textContent.trim() || 'Not listed';
+  function extractCardData(card) {
+    const dismissBtn = card.querySelector('button[aria-label^="Dismiss"]');
+    let title = dismissBtn
+      ? dismissBtn.getAttribute("aria-label").replace(/^Dismiss\s+/, "").replace(/\s+job$/, "").trim()
+      : "";
+    title = title.replace(/\s*\(Verified job\)\s*$/, "").trim();
 
-  // Apply type: Easy Apply is shown as text in the card
-  const applyType = card.textContent.includes('Easy Apply') ? 'Easy Apply' : 'Apply';
+    const titleP = title
+      ? Array.from(card.querySelectorAll("p")).find((p) => p.textContent.includes(title))
+      : null;
+    const companyDiv = titleP?.nextElementSibling;
+    const company = companyDiv?.querySelector("p")?.textContent.trim() || "";
+    const location = companyDiv?.nextElementSibling?.textContent.trim() || "";
 
-  return { title, company, location, datePosted, salary, applyType };
-}
+    const dateSpan = Array.from(card.querySelectorAll("span")).find((span) => span.textContent.trim().startsWith("Posted on"));
+    const datePosted = dateSpan?.textContent.replace(/^Posted on\s*/, "").trim() || "";
 
-async function collectCurrentJobData(card, jobId) {
-  const cardData = extractCardData(card);
+    const allPs = card.querySelectorAll("p");
+    const salaryP = Array.from(allPs).find((p) => /\$[\d,.]+[KM]?\/yr/.test(p.textContent));
+    const salary = salaryP?.textContent.trim() || "Not listed";
 
-  // Resolve both right-panel sections independently.
-  let aboutJobContext = findSectionContext(document, "About the job");
-  let aboutCompanyContext = findSectionContext(document, "About the company");
-  let description = await readSectionText({
-    textEl: aboutJobContext.textEl,
-    expandButtonEl: aboutJobContext.expandButtonEl,
-    sleep
-  });
-  let aboutCompany = await readSectionText({
-    textEl: aboutCompanyContext.textEl,
-    expandButtonEl: aboutCompanyContext.expandButtonEl,
-    sleep
-  });
+    const applyType = card.textContent.includes("Easy Apply") ? "Easy Apply" : "Apply";
 
-  // Re-query after potential expansion because LinkedIn may replace the section nodes.
-  aboutJobContext = findSectionContext(document, "About the job");
-  aboutCompanyContext = findSectionContext(document, "About the company");
-  description = await readSectionText({
-    textEl: aboutJobContext.textEl,
-    expandButtonEl: null,
-    sleep
-  }) || '(Description not available)';
-  aboutCompany = await readSectionText({
-    textEl: aboutCompanyContext.textEl,
-    expandButtonEl: null,
-    sleep
-  });
+    return { title, company, location, datePosted, salary, applyType };
+  }
 
-  // Get apply URL from right panel
-  let applyUrl = `https://www.linkedin.com/jobs/view/${jobId}/`;
-  let applyType = cardData.applyType;
+  async function collectCurrentJobData(card, jobId) {
+    const cardData = extractCardData(card);
 
-  if (applyType !== 'Easy Apply') {
-    const externalBtn = document.querySelector('a[aria-label="Apply on company website"]');
-    if (externalBtn) {
-      applyType = 'Apply on company website';
-      const rawHref = externalBtn.getAttribute('href') || '';
-      try {
-        const urlObj = new URL(rawHref, 'https://www.linkedin.com');
-        const redirectUrl = urlObj.searchParams.get('url');
-        if (redirectUrl) {
-          const decoded = decodeURIComponent(redirectUrl);
-          applyUrl = /^https?:\/\//i.test(decoded) ? decoded : rawHref;
-        } else {
+    let aboutJobContext = findSectionContext(document, "About the job");
+    let aboutCompanyContext = findSectionContext(document, "About the company");
+    let description = await readSectionText({
+      textEl: aboutJobContext.textEl,
+      expandButtonEl: aboutJobContext.expandButtonEl,
+      sleep
+    });
+    let aboutCompany = await readSectionText({
+      textEl: aboutCompanyContext.textEl,
+      expandButtonEl: aboutCompanyContext.expandButtonEl,
+      sleep
+    });
+
+    aboutJobContext = findSectionContext(document, "About the job");
+    aboutCompanyContext = findSectionContext(document, "About the company");
+    description = await readSectionText({
+      textEl: aboutJobContext.textEl,
+      expandButtonEl: null,
+      sleep
+    }) || "(Description not available)";
+    aboutCompany = await readSectionText({
+      textEl: aboutCompanyContext.textEl,
+      expandButtonEl: null,
+      sleep
+    });
+
+    let applyUrl = `https://www.linkedin.com/jobs/view/${jobId}/`;
+    let applyType = cardData.applyType;
+
+    if (applyType !== "Easy Apply") {
+      const externalBtn = document.querySelector('a[aria-label="Apply on company website"]');
+      if (externalBtn) {
+        applyType = "Apply on company website";
+        const rawHref = externalBtn.getAttribute("href") || "";
+        try {
+          const urlObj = new URL(rawHref, "https://www.linkedin.com");
+          const redirectUrl = urlObj.searchParams.get("url");
+          if (redirectUrl) {
+            const decoded = decodeURIComponent(redirectUrl);
+            applyUrl = /^https?:\/\//i.test(decoded) ? decoded : rawHref;
+          } else {
+            applyUrl = rawHref;
+          }
+        } catch {
           applyUrl = rawHref;
         }
-      } catch {
-        applyUrl = rawHref;
       }
     }
+
+    const linkedinUrl = `https://www.linkedin.com/jobs/view/${jobId}/`;
+    return {
+      ...cardData,
+      jobId,
+      linkedinUrl,
+      applyUrl,
+      applyType,
+      description,
+      aboutCompany
+    };
   }
 
-  const linkedinUrl = `https://www.linkedin.com/jobs/view/${jobId}/`;
-  return {
-    ...cardData,
-    jobId,
-    linkedinUrl,
-    applyUrl,
-    applyType,
-    description,
-    aboutCompany,
-    missingAboutCompanySection: aboutCompanyContext.missingSection
-  };
-}
+  function waitForNewCards(leftPanel) {
+    return new Promise((resolve) => {
+      const firstCard = leftPanel.querySelector('div[role="button"][componentkey]');
+      const firstKey = firstCard?.getAttribute("componentkey") || null;
 
-function waitForNewCards(leftPanel) {
-  return new Promise(resolve => {
-    // Snapshot the componentkey of the first card to detect page change
-    const firstCard = leftPanel.querySelector('div[role="button"][componentkey]');
-    const firstKey = firstCard?.getAttribute('componentkey') || null;
-
-    const timeout = setTimeout(() => { observer.disconnect(); resolve(); }, 5000);
-    const observer = new MutationObserver(() => {
-      const newFirst = leftPanel.querySelector('div[role="button"][componentkey]');
-      const newKey = newFirst?.getAttribute('componentkey');
-      if (newFirst && newKey !== firstKey) {
-        clearTimeout(timeout);
+      const timeout = setTimeout(() => {
         observer.disconnect();
         resolve();
+      }, 5000);
+      const observer = new MutationObserver(() => {
+        const newFirst = leftPanel.querySelector('div[role="button"][componentkey]');
+        const newKey = newFirst?.getAttribute("componentkey");
+        if (newFirst && newKey !== firstKey) {
+          clearTimeout(timeout);
+          observer.disconnect();
+          resolve();
+        }
+      });
+      observer.observe(leftPanel, { childList: true, subtree: true });
+    });
+  }
+
+  function waitForJobIdChange(prevJobId, timeoutMs = 5000) {
+    return new Promise((resolve) => {
+      const check = () => new URLSearchParams(window.location.search).get("currentJobId");
+      const currentId = check();
+      if (currentId && currentId !== prevJobId) {
+        resolve(currentId);
+        return;
       }
+
+      const interval = setInterval(() => {
+        const nextId = check();
+        if (nextId && nextId !== prevJobId) {
+          clearInterval(interval);
+          clearTimeout(timeout);
+          resolve(nextId);
+        }
+      }, 100);
+
+      const timeout = setTimeout(() => {
+        clearInterval(interval);
+        resolve(null);
+      }, timeoutMs);
     });
-    observer.observe(leftPanel, { childList: true, subtree: true });
-  });
-}
+  }
 
-function sanitizeFilename(company, title, jobId) {
-  const clean = s => (s || 'Unknown').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-  const base = `${clean(company)}_${clean(title)}`.slice(0, 80);
-  return `${base}_${jobId}.md`;
-}
+  function waitForDescriptionChange(prevText, timeoutMs = 5000) {
+    const selector = '[data-testid="expandable-text-box"]';
+    return new Promise((resolve) => {
+      const check = () => {
+        const el = document.querySelector(selector);
+        if (!el) {
+          return null;
+        }
+        return el.innerText !== prevText ? el : null;
+      };
 
-function formatMarkdown({
-  title,
-  company,
-  location,
-  salary,
-  datePosted,
-  applyType,
-  applyUrl,
-  linkedinUrl,
-  jobId,
-  description,
-  aboutCompany,
-  missingAboutCompanySection
-}) {
-  const aboutCompanySection = formatAboutCompanySection(aboutCompany, {
-    missingAboutCompany: missingAboutCompanySection
-  });
+      const initialResult = check();
+      if (initialResult) {
+        resolve(initialResult);
+        return;
+      }
 
-  return `# ${title}
-**Company:** ${company}
-**Location:** ${location}
-**Salary:** ${salary}
-**Date Posted:** ${datePosted}
-**LinkedIn Post:** [View on LinkedIn](${linkedinUrl})
-**Apply:** [${applyType}](${applyUrl})
-**Job ID:** ${jobId}
+      const timeout = setTimeout(() => {
+        observer.disconnect();
+        resolve(document.querySelector(selector));
+      }, timeoutMs);
 
----
+      const observer = new MutationObserver(() => {
+        const result = check();
+        if (result) {
+          clearTimeout(timeout);
+          observer.disconnect();
+          resolve(result);
+        }
+      });
 
-## About the Job
-
-${description}
-
----
-
-## About the company
-
-${aboutCompanySection}
-`;
-}
-
-function waitForJobIdChange(prevJobId, timeoutMs = 5000) {
-  return new Promise(resolve => {
-    const check = () => new URLSearchParams(window.location.search).get('currentJobId');
-    const id = check();
-    if (id && id !== prevJobId) { resolve(id); return; }
-    const interval = setInterval(() => {
-      const id = check();
-      if (id && id !== prevJobId) { clearInterval(interval); clearTimeout(timeout); resolve(id); }
-    }, 100);
-    const timeout = setTimeout(() => { clearInterval(interval); resolve(null); }, timeoutMs);
-  });
-}
-
-// Note: if two consecutive jobs have identical description text, this will time out
-// (harmless — the URL change already confirmed LinkedIn loaded the new job).
-function waitForDescriptionChange(prevText, timeoutMs = 5000) {
-  const selector = '[data-testid="expandable-text-box"]';
-  return new Promise(resolve => {
-    const check = () => {
-      const el = document.querySelector(selector);
-      if (!el) return null;
-      return el.innerText !== prevText ? el : null;
-    };
-    const result = check();
-    if (result) { resolve(result); return; }
-    const timeout = setTimeout(() => { observer.disconnect(); resolve(document.querySelector(selector)); }, timeoutMs);
-    const observer = new MutationObserver(() => {
-      const result = check();
-      if (result) { clearTimeout(timeout); observer.disconnect(); resolve(result); }
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true });
     });
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-  });
-}
+  }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
 }
-
-} // end of __linkedInScraperLoaded guard

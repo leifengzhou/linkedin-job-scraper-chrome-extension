@@ -1,14 +1,15 @@
 (function (root) {
   function getMissingCriticalFields(jobData) {
+    const record = jobData || {};
     const missingFields = [];
-    if (!jobData.title) missingFields.push("title");
-    if (!jobData.company) missingFields.push("company");
-    if (!jobData.linkedinUrl) missingFields.push("linkedinUrl");
-    if (!jobData.applyUrl) missingFields.push("applyUrl");
-    if (!jobData.description || jobData.description === "(Description not available)") {
+    if (!record.title) missingFields.push("title");
+    if (!record.company) missingFields.push("company");
+    if (!record.linkedinUrl) missingFields.push("linkedinUrl");
+    if (!record.applyUrl) missingFields.push("applyUrl");
+    if (!record.description || record.description === "(Description not available)") {
       missingFields.push("description");
     }
-    if (!jobData.aboutCompany) {
+    if (!record.aboutCompany) {
       missingFields.push("aboutCompany");
     }
     return missingFields;

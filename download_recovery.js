@@ -1,5 +1,5 @@
 (function (root) {
-  function buildMarkdownDataUrl(content) {
+  function buildDownloadDataUrl(content, mimeType = "text/plain") {
     const bytes = new TextEncoder().encode(content);
     const chunkSize = 8192;
     const binaryChunks = [];
@@ -9,7 +9,7 @@
     }
 
     const b64 = btoa(binaryChunks.join(""));
-    return "data:text/markdown;base64," + b64;
+    return `data:${mimeType};base64,${b64}`;
   }
 
   function shouldRetryDownload(entry, now = Date.now()) {
@@ -38,7 +38,7 @@
   }
 
   const api = {
-    buildMarkdownDataUrl,
+    buildDownloadDataUrl,
     shouldRetryDownload,
     buildFailedDownloadRecord,
     trimFailedDownloads,

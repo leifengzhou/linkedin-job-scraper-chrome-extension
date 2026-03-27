@@ -25,6 +25,19 @@ test("getMissingCriticalFields returns all blank critical fields", () => {
   ]);
 });
 
+test("getMissingCriticalFields treats a missing job object as all critical fields missing", () => {
+  const missingFields = getMissingCriticalFields(null);
+
+  assert.deepEqual(missingFields, [
+    "title",
+    "company",
+    "linkedinUrl",
+    "applyUrl",
+    "description",
+    "aboutCompany"
+  ]);
+});
+
 test("collectJobDataWithRetries retries with increasing delays until data is complete", async () => {
   const attempts = [];
   const delays = [];

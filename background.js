@@ -2,8 +2,7 @@ importScripts("download_recovery.js");
 
 const {
   buildFailedDownloadRecord,
-  buildMarkdownDataUrl,
-  formatDownloadHealthMessage,
+  buildDownloadDataUrl,
   shouldRetryDownload,
   trimFailedDownloads
 } = globalThis.LinkedInScraperDownloadRecovery;
@@ -13,9 +12,22 @@ const RETRY_BACKOFF_MS = 500;
 const pendingDownloads = new Map();
 let nextRequestId = 1;
 
+chrome.action.onClicked.addListener(async (tab) => {
+  if (!tab.id || !tab.url || !tab.url.includes("linkedin.com/jobs")) {
+    return;
+  }
+
+  try {
+    await ensureScraperScripts(tab.id);
+    await chrome.tabs.sendMessage(tab.id, { action: "openControls" });
+  } catch (error) {
+    console.error("[LinkedInScraper] Failed to open in-page controls:", error.message || error);
+  }
+});
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.action === "download") {
-    handleDownloadRequest(msg, sendResponse);
+  if (msg.action === "downloadJsonExport") {
+    handleJsonExportRequest(msg, sendResponse);
     return true;
   }
 });
@@ -42,11 +54,12 @@ chrome.downloads.onChanged.addListener((delta) => {
   }
 });
 
-async function handleDownloadRequest(msg, sendResponse) {
+async function handleJsonExportRequest(msg, sendResponse) {
   const entry = {
     requestId: nextRequestId++,
     filename: msg.filename,
-    content: msg.content,
+    content: JSON.stringify(msg.payload ?? null, null, 2),
+    mimeType: "application/json",
     attempts: 0,
     retryStartedAt: null,
     timeoutMs: msg.timeoutMs || 5000,
@@ -65,7 +78,7 @@ async function startDownloadAttempt(entry) {
   entry.attempts += 1;
 
   const downloadId = await chrome.downloads.download({
-    url: buildMarkdownDataUrl(entry.content),
+    url: buildDownloadDataUrl(entry.content, entry.mimeType),
     filename: entry.filename,
     saveAs: false
   });
@@ -134,7 +147,6 @@ async function appendFailedDownload(record) {
   const failedDownloads = await getFailedDownloads();
   const nextFailedDownloads = trimFailedDownloads([...failedDownloads, record], 100);
   await chrome.storage.local.set({ [FAILED_DOWNLOADS_KEY]: nextFailedDownloads });
-  broadcastDownloadStatusChanged(nextFailedDownloads.length);
 }
 
 async function getFailedDownloads() {
@@ -142,12 +154,33 @@ async function getFailedDownloads() {
   return Array.isArray(result[FAILED_DOWNLOADS_KEY]) ? result[FAILED_DOWNLOADS_KEY] : [];
 }
 
-function broadcastDownloadStatusChanged(failedCount) {
-  chrome.runtime.sendMessage({
-    action: "downloadStatusChanged",
-    failedCount,
-    message: formatDownloadHealthMessage(failedCount)
-  }).catch(() => {});
+async function ensureScraperScripts(tabId) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { action: "ping" });
+  } catch (error) {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content_script_bootstrap.js"]
+    });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        globalThis.LinkedInScraperBootstrap?.resetBootstrapState(globalThis, document);
+      }
+    });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: [
+        "retry_policy.js",
+        "description_utils.js",
+        "scrape_session.js",
+        "in_page_controls.js",
+        "json_export.js",
+        "content_script_bootstrap.js",
+        "content_script.js"
+      ]
+    });
+  }
 }
 
 function sleep(ms) {
