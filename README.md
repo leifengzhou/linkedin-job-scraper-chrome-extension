@@ -16,6 +16,7 @@ A Chrome Extension (Manifest V3) that scrapes LinkedIn job search results and ex
 - Automatically retries an interrupted final export download for up to 5 seconds
 - Logs unrecoverable final export download failures to extension storage for inspection
 - Handles pagination automatically
+- Supports both the legacy LinkedIn jobs results layout and the newer `/jobs/search/` results layout
 
 ## Installation
 
@@ -122,6 +123,7 @@ To inspect them:
 
 - Reload the unpacked extension
 - Refresh the LinkedIn Jobs tab
+- Test once on the newer `/jobs/search/` layout and once on a legacy results layout if LinkedIn serves both in your account
 - Click the extension icon and confirm the in-page modal appears
 - Confirm the target-count input defaults to `25`
 - Start a scrape from the in-page modal
@@ -151,7 +153,7 @@ To inspect them:
 
 - LinkedIn's DOM structure changes frequently. The scraper uses stable attributes (`data-testid`, `aria-label`, `role`, `componentkey`) rather than CSS class names, but may still need updates if LinkedIn restructures their markup.
 - Requires an active LinkedIn session (you must be logged in).
-- Designed for the `/jobs/search/` results page layout.
+- Designed for LinkedIn jobs search/results layouts, including the current `/jobs/search/` experience and legacy two-pane variants.
 
 ## License
 

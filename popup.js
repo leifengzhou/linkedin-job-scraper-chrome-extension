@@ -1,6 +1,7 @@
 let isRunning = false;
 let activeTabId = null;
 const { formatDownloadHealthMessage } = globalThis.LinkedInScraperDownloadRecovery || {};
+const { CONTENT_SCRIPT_FILES = [] } = globalThis.LinkedInScraperContentScriptFiles || {};
 
 document.addEventListener("DOMContentLoaded", async () => {
   const statusEl = document.getElementById("status");
@@ -41,7 +42,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       try {
         await chrome.scripting.executeScript({
           target: { tabId: activeTabId },
-          files: ["retry_policy.js", "description_utils.js", "content_script.js"]
+          files: CONTENT_SCRIPT_FILES
         });
       } catch (e) {
         // Already injected or can't inject — proceed anyway

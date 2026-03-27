@@ -20,8 +20,7 @@ test("getMissingCriticalFields returns all blank critical fields", () => {
     "title",
     "linkedinUrl",
     "applyUrl",
-    "description",
-    "aboutCompany"
+    "description"
   ]);
 });
 
@@ -33,8 +32,7 @@ test("getMissingCriticalFields treats a missing job object as all critical field
     "company",
     "linkedinUrl",
     "applyUrl",
-    "description",
-    "aboutCompany"
+    "description"
   ]);
 });
 
@@ -65,6 +63,34 @@ test("collectJobDataWithRetries retries with increasing delays until data is com
   assert.deepEqual(delays, [1000, 2000]);
 });
 
+test("collectJobDataWithRetries does not retry when only aboutCompany is missing", async () => {
+  const attempts = [];
+  const delays = [];
+
+  const result = await collectJobDataWithRetries({
+    maxRetries: 10,
+    collect: async (attemptNumber) => {
+      attempts.push(attemptNumber);
+      return {
+        title: "Engineer",
+        company: "Acme",
+        linkedinUrl: "https://linkedin.com/jobs/view/1/",
+        applyUrl: "https://linkedin.com/jobs/view/1/",
+        description: "Role details",
+        aboutCompany: ""
+      };
+    },
+    sleep: async (ms) => {
+      delays.push(ms);
+    }
+  });
+
+  assert.equal(result.exhaustedRetries, false);
+  assert.deepEqual(result.missingFields, []);
+  assert.equal(attempts.length, 1);
+  assert.deepEqual(delays, []);
+});
+
 test("collectJobDataWithRetries returns missing fields after the tenth failed attempt", async () => {
   let attempts = 0;
 
@@ -86,5 +112,5 @@ test("collectJobDataWithRetries returns missing fields after the tenth failed at
 
   assert.equal(attempts, 10);
   assert.equal(result.exhaustedRetries, true);
-  assert.deepEqual(result.missingFields, ["title", "applyUrl", "description", "aboutCompany"]);
+  assert.deepEqual(result.missingFields, ["title", "applyUrl", "description"]);
 });

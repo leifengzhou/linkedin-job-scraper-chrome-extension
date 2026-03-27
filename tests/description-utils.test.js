@@ -122,3 +122,69 @@ test("readSectionText returns section text directly when no expand button exists
 
   assert.equal(result, "Short company overview");
 });
+
+test("findSectionContext can use alternate text selectors on the heading container", () => {
+  const textEl = { innerText: "About the job\nExpanded description" };
+  const section = {
+    matches: (selector) => selector === "#job-details",
+    querySelector: () => null,
+    nextElementSibling: null,
+    parentElement: null
+  };
+  const heading = {
+    textContent: "About the job",
+    parentElement: section,
+    closest: () => section
+  };
+  const doc = {
+    querySelectorAll: () => [heading]
+  };
+
+  const result = findSectionContext(doc, "About the job", {
+    textSelectors: ["#job-details"]
+  });
+
+  assert.equal(result.textEl, section);
+  assert.equal(result.missingSection, false);
+});
+
+test("readSectionText strips alternate expand buttons from cloned content", async () => {
+  const removed = [];
+  const textEl = {
+    innerText: "Workspot overview",
+    cloneNode() {
+      return {
+        querySelectorAll(selector) {
+          if (selector === ".inline-show-more-text__button") {
+            return [{ remove: () => removed.push("removed") }];
+          }
+          return [];
+        },
+        innerText: "Expanded company overview"
+      };
+    }
+  };
+
+  const result = await readSectionText({
+    textEl,
+    expandButtonEl: null,
+    expandButtonSelectors: [".inline-show-more-text__button"],
+    sleep: async () => {}
+  });
+
+  assert.equal(removed.length, 1);
+  assert.equal(result, "Expanded company overview");
+});
+
+test("readSectionText returns quickly when the section is absent", async () => {
+  const result = await readSectionText({
+    textEl: null,
+    expandButtonEl: null,
+    expandButtonSelectors: [".inline-show-more-text__button"],
+    sleep: async () => {
+      throw new Error("sleep should not be called");
+    }
+  });
+
+  assert.equal(result, "");
+});

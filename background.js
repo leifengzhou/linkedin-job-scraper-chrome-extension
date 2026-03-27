@@ -1,4 +1,4 @@
-importScripts("download_recovery.js");
+importScripts("download_recovery.js", "content_script_files.js");
 
 const {
   buildFailedDownloadRecord,
@@ -6,6 +6,9 @@ const {
   shouldRetryDownload,
   trimFailedDownloads
 } = globalThis.LinkedInScraperDownloadRecovery;
+const {
+  CONTENT_SCRIPT_FILES
+} = globalThis.LinkedInScraperContentScriptFiles;
 
 const FAILED_DOWNLOADS_KEY = "failedDownloads";
 const RETRY_BACKOFF_MS = 500;
@@ -170,15 +173,7 @@ async function ensureScraperScripts(tabId) {
     });
     await chrome.scripting.executeScript({
       target: { tabId },
-      files: [
-        "retry_policy.js",
-        "description_utils.js",
-        "scrape_session.js",
-        "in_page_controls.js",
-        "json_export.js",
-        "content_script_bootstrap.js",
-        "content_script.js"
-      ]
+      files: CONTENT_SCRIPT_FILES
     });
   }
 }

@@ -9,9 +9,6 @@
     if (!record.description || record.description === "(Description not available)") {
       missingFields.push("description");
     }
-    if (!record.aboutCompany) {
-      missingFields.push("aboutCompany");
-    }
     return missingFields;
   }
 

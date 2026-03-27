@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn Job Scraper",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "permissions": ["downloads", "tabs", "storage", "scripting"],
   "host_permissions": ["https://www.linkedin.com/*"],
   "background": { "service_worker": "background.js" },
@@ -14,6 +14,6 @@
   },
   "content_scripts": [{
     "matches": ["https://www.linkedin.com/jobs/*"],
-    "js": ["retry_policy.js", "description_utils.js", "scrape_session.js", "in_page_controls.js", "json_export.js", "content_script_bootstrap.js", "content_script.js"]
+    "js": ["retry_policy.js", "job_dom_adapters.js", "description_utils.js", "scrape_session.js", "in_page_controls.js", "json_export.js", "content_script_bootstrap.js", "content_script.js"]
   }]
 }
