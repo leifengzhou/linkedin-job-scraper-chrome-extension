@@ -98,14 +98,8 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
     const mountTarget = document.body || document.documentElement;
     mountTarget.appendChild(controls.rootEl);
 
-    controls.startButtonEl.addEventListener("click", () => {
-      handleStartResumeClick();
-    });
-    controls.pauseButtonEl.addEventListener("click", () => {
-      handlePauseClick();
-    });
-    controls.stopButtonEl.addEventListener("click", () => {
-      handleStopClick();
+    controls.primaryButtonEl.addEventListener("click", () => {
+      handlePrimaryActionClick();
     });
     controls.downloadButtonEl.addEventListener("click", () => {
       void handleDownloadClick();
@@ -173,6 +167,20 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
 
     renderSession();
     void scrapeAllPages();
+  }
+
+  function handlePrimaryActionClick() {
+    if (session.status === "running") {
+      handlePauseClick();
+      return;
+    }
+
+    if (session.status === "pauseRequested") {
+      renderSession();
+      return;
+    }
+
+    handleStartResumeClick();
   }
 
   function handlePauseClick() {
