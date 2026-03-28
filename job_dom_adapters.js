@@ -84,9 +84,16 @@
       return null;
     }
 
+    const stableJobId = (
+      card.getAttribute?.("data-job-id") ||
+      card.getAttribute?.("job-id") ||
+      card.getAttribute?.("data-occludable-job-id") ||
+      extractJobIdFromHref(card.querySelector?.('a[href*="/jobs/view/"]')?.getAttribute?.("href"))
+    );
+
     return (
+      stableJobId ||
       card.getAttribute?.("componentkey") ||
-      extractJobIdFromHref(card.querySelector?.('a[href*="/jobs/view/"]')?.getAttribute?.("href")) ||
       null
     );
   }
@@ -252,19 +259,36 @@
     return "";
   }
 
+  function findEasyApplyAction(detailRoot) {
+    const easyApplyLink = detailRoot?.querySelector?.('a[aria-label*="Easy Apply"]') || null;
+    if (easyApplyLink) {
+      return easyApplyLink;
+    }
+
+    return detailRoot?.querySelector?.('button[aria-label*="Easy Apply"]') || null;
+  }
+
+  function findCompanyWebsiteApplyLink(detailRoot) {
+    return findAll(detailRoot, "a")
+      .find((link) => {
+        const ariaLabel = link?.getAttribute?.("aria-label") || "";
+        return /apply/i.test(ariaLabel) && /website/i.test(ariaLabel);
+      }) || null;
+  }
+
   function extractApplyAction(rootNode = document) {
     const detailRoot = findDetailRoot(rootNode) || rootNode;
-    const easyApplyButton = detailRoot?.querySelector?.('button[aria-label*="Easy Apply"]') || null;
-    if (easyApplyButton) {
+    const easyApplyAction = findEasyApplyAction(detailRoot);
+    if (easyApplyAction) {
       return {
         applyType: "Easy Apply",
         href: "",
-        ariaLabel: easyApplyButton.getAttribute?.("aria-label") || "",
+        ariaLabel: easyApplyAction.getAttribute?.("aria-label") || "",
         isEasyApply: true
       };
     }
 
-    const externalLink = detailRoot?.querySelector?.('a[aria-label="Apply on company website"]') || null;
+    const externalLink = findCompanyWebsiteApplyLink(detailRoot);
     if (externalLink) {
       return {
         applyType: "Apply on company website",
