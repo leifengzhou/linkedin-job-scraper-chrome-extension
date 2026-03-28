@@ -3,66 +3,153 @@
 <head>
   <meta charset="UTF-8">
   <style>
+    :root {
+      color-scheme: light;
+      --linkedin-blue: #0a66c2;
+      --ink: #162033;
+      --muted: #5c6678;
+      --line: #d8e2ef;
+      --surface: #f6f9fc;
+      --surface-strong: #ffffff;
+      --success: #166534;
+      --warning: #8a4b08;
+      --danger: #b42318;
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      width: 280px;
-      padding: 16px;
+      width: 320px;
       margin: 0;
+      padding: 18px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #ffffff 0%, #f4f8fc 100%);
+      box-sizing: border-box;
     }
     h1 {
-      font-size: 14px;
-      font-weight: 600;
-      margin: 0 0 12px;
-      color: #0a66c2;
-    }
-    #status {
-      font-size: 12px;
-      color: #555;
       margin: 0 0 8px;
+      font-size: 17px;
+      line-height: 1.2;
+      color: var(--linkedin-blue);
     }
-    #progress {
-      font-size: 12px;
-      color: #777;
-      margin: 0 0 12px;
-      min-height: 16px;
+
+    p {
+      margin: 0;
     }
-    #downloadHealth {
-      font-size: 12px;
-      color: #777;
-      margin: 0 0 12px;
-      min-height: 16px;
-    }
-    #btn {
-      width: 100%;
-      padding: 8px;
+
+    .intro {
       font-size: 13px;
-      font-weight: 500;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      background: #0a66c2;
-      color: white;
+      line-height: 1.45;
+      color: var(--muted);
+      margin-bottom: 14px;
     }
-    #btn:disabled {
-      background: #ccc;
+
+    .panel {
+      background: var(--surface-strong);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+
+    .button-stack {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    button {
+      width: 100%;
+      border: none;
+      border-radius: 10px;
+      padding: 11px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    #goToJobsBtn {
+      background: var(--linkedin-blue);
+      color: #ffffff;
+    }
+
+    #readyBtn {
+      background: #0f172a;
+      color: #ffffff;
+    }
+
+    #readyBtn:disabled {
+      background: #c6d1df;
+      color: #4f5d73;
       cursor: not-allowed;
     }
-    #btn.stop {
-      background: #cc1016;
+
+    .label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
     }
-    .error {
-      color: #cc1016 !important;
+
+    .steps {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--ink);
+    }
+
+    .steps li + li {
+      margin-top: 6px;
+    }
+
+    #pageMessage,
+    #actionMessage {
+      font-size: 12px;
+      line-height: 1.45;
+      margin-top: 12px;
+    }
+
+    #pageMessage {
+      color: var(--warning);
+    }
+
+    #pageMessage.ready {
+      color: var(--success);
+    }
+
+    #actionMessage {
+      color: var(--danger);
+      min-height: 18px;
     }
   </style>
 </head>
 <body>
   <h1>LinkedIn Job Scraper</h1>
-  <p id="status">Checking page...</p>
-  <p id="progress"></p>
-  <p id="downloadHealth"></p>
-  <button id="btn" disabled>Loading...</button>
-  <script src="download_recovery.js"></script>
+  <p class="intro">Use this on LinkedIn Jobs search pages after your results are set up.</p>
+
+  <section class="panel">
+    <div class="button-stack">
+      <button id="goToJobsBtn" type="button">Go to LinkedIn Jobs</button>
+      <button id="readyBtn" type="button" disabled>Ready to Scrape</button>
+    </div>
+
+    <span class="label">Before Scraping</span>
+    <ol class="steps">
+      <li>Sign in to LinkedIn first.</li>
+      <li>Search for a specific job title or role.</li>
+      <li>Set filters like location, date posted, and other job preferences.</li>
+      <li>Click <strong>Ready to Scrape</strong> on the results page.</li>
+    </ol>
+
+    <p id="pageMessage">Checking page...</p>
+    <p id="actionMessage"></p>
+  </section>
+
   <script src="content_script_files.js"></script>
+  <script src="popup_state.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -8,7 +8,8 @@ A Chrome Extension (Manifest V3) that scrapes LinkedIn job search results and ex
 - Extracts title, company, location, salary, date posted, apply type, and full description
 - Unwraps LinkedIn redirect URLs to get direct company apply links
 - Buffers extracted jobs in memory and downloads one JSON export only when the user clicks `Download`
-- Opens an in-page scraper modal from the extension icon on LinkedIn Jobs pages
+- Opens a guidance popup from the extension icon on every page
+- Launches the existing in-page scraper modal from the popup on supported LinkedIn Jobs search pages
 - Supports `Start`, `Pause`, `Resume`, `Stop`, and `Download` directly in the page
 - Lets the user set a per-run target count from `1` to `500`, defaulting to `25`
 - Keeps a persistent reopen chip when the modal is closed mid-run
@@ -26,10 +27,13 @@ No build step required — the extension loads directly from source.
 2. Open `chrome://extensions` in Chrome
 3. Enable **Developer Mode** (toggle in top-right)
 4. Click **Load Unpacked** and select the cloned directory
-5. Navigate to a LinkedIn job search page (e.g. `linkedin.com/jobs/search/...`)
-6. Click the extension icon to open the in-page controls
-7. Set **Jobs to scrape** if you want something other than `25`
-8. Click **Start** in the in-page modal
+5. Sign in to LinkedIn
+6. Navigate to a LinkedIn job search page (e.g. `linkedin.com/jobs/search/...`)
+7. Search for a specific role and apply filters such as location and date posted
+8. Click the extension icon to open the popup
+9. Click **Ready to Scrape** to open the in-page controls
+10. Set **Jobs to scrape** if you want something other than `25`
+11. Click **Start** in the in-page modal
 
 ## Output
 
@@ -81,8 +85,10 @@ The JSON export contains run metadata, summary counts, successful jobs, and unre
 
 ```
 manifest.json       → MV3 config; permissions: downloads, tabs, storage, scripting
+popup.html / .js    → Extension icon popup with LinkedIn Jobs guidance and Ready-to-Scrape action
+popup_state.js      → Supported-page detection for the popup
 content_script.js   → Core scraper; runs in LinkedIn tab; DOM interaction + in-page control wiring
-background.js       → Service worker; handles action clicks, final JSON export downloads, and retry recovery
+background.js       → Service worker; handles final JSON export downloads and retry recovery
 scrape_session.js   → Run-local session state helpers for pause/resume/progress tracking
 in_page_controls.js → In-page modal/chip rendering helpers
 json_export.js      → Run-local JSON export buffer and payload helpers
@@ -90,20 +96,22 @@ json_export.js      → Run-local JSON export buffer and payload helpers
 
 ### How It Works
 
-1. Clicking the **extension icon** on a LinkedIn Jobs page opens the in-page scraper controls
-2. **Start** begins a scrape in the current tab; **Pause** finishes the current job then halts before the next one
-3. The **content script** iterates through job cards in the left panel, clicking each one
-4. For each card, it snapshots the URL and description *before* clicking, then waits for both to change — this prevents reading stale data from the previous job
-5. Job metadata (title, company, location, salary) is extracted from the left panel card; the full description and apply link come from the right panel
-6. Each usable job is normalized into a structured record and added to an in-memory export buffer in the content script
-7. Partial jobs are still kept in the export buffer with `missingFields` and `exhaustedRetries` annotations
-8. The run is considered **done** when the requested processed-job target is reached, where `processed = saved + failed`
-9. If LinkedIn runs out of results before the target is reached, the run stops with the collected partial buffer still available
-10. Clicking **Download** after `Pause`, `Stop`, or `done` serializes the current buffer and downloads one JSON file via `chrome.downloads`
-11. The **background service worker** retries an interrupted final download with a fresh download for up to 5 seconds total
-12. If recovery still fails, the worker logs the failure to `chrome.storage.local.failedDownloads` for debugging, but the run-local saved/failed counts continue to reflect extraction outcomes only
-13. Closing the modal leaves behind a small reopen chip in the page
-14. After all cards on a page, it clicks the next-page button and repeats until the target is met, the results end, or the user stops the run
+1. Clicking the **extension icon** always opens the popup
+2. The popup tells the user to sign in, search for a specific role, and apply filters before scraping
+3. On supported LinkedIn Jobs search pages, clicking **Ready to Scrape** opens the existing in-page scraper controls
+4. **Start** begins a scrape in the current tab; **Pause** finishes the current job then halts before the next one
+5. The **content script** iterates through job cards in the left panel, clicking each one
+6. For each card, it snapshots the URL and description *before* clicking, then waits for both to change — this prevents reading stale data from the previous job
+7. Job metadata (title, company, location, salary) is extracted from the left panel card; the full description and apply link come from the right panel
+8. Each usable job is normalized into a structured record and added to an in-memory export buffer in the content script
+9. Partial jobs are still kept in the export buffer with `missingFields` and `exhaustedRetries` annotations
+10. The run is considered **done** when the requested processed-job target is reached, where `processed = saved + failed`
+11. If LinkedIn runs out of results before the target is reached, the run stops with the collected partial buffer still available
+12. Clicking **Download** after `Pause`, `Stop`, or `done` serializes the current buffer and downloads one JSON file via `chrome.downloads`
+13. The **background service worker** retries an interrupted final download with a fresh download for up to 5 seconds total
+14. If recovery still fails, the worker logs the failure to `chrome.storage.local.failedDownloads` for debugging, but the run-local saved/failed counts continue to reflect extraction outcomes only
+15. Closing the modal leaves behind a small reopen chip in the page
+16. After all cards on a page, it clicks the next-page button and repeats until the target is met, the results end, or the user stops the run
 
 ## Failed Download Logs
 
@@ -124,7 +132,10 @@ To inspect them:
 - Reload the unpacked extension
 - Refresh the LinkedIn Jobs tab
 - Test once on the newer `/jobs/search/` layout and once on a legacy results layout if LinkedIn serves both in your account
-- Click the extension icon and confirm the in-page modal appears
+- Click the extension icon on a non-LinkedIn page and confirm the popup opens
+- Confirm the popup shows the LinkedIn Jobs button, sign-in guidance, setup instructions, and a disabled **Ready to Scrape** button on unsupported pages
+- Click the extension icon on a supported LinkedIn Jobs search page and confirm **Ready to Scrape** becomes enabled
+- Click **Ready to Scrape** and confirm the in-page modal appears
 - Confirm the target-count input defaults to `25`
 - Start a scrape from the in-page modal
 - Confirm progress updates and pagination behavior while no file downloads during the active run

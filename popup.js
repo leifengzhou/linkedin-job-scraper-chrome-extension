@@ -1,120 +1,81 @@
-let isRunning = false;
-let activeTabId = null;
-const { formatDownloadHealthMessage } = globalThis.LinkedInScraperDownloadRecovery || {};
 const { CONTENT_SCRIPT_FILES = [] } = globalThis.LinkedInScraperContentScriptFiles || {};
+const { buildPopupState } = globalThis.LinkedInScraperPopupState || {};
 
 document.addEventListener("DOMContentLoaded", async () => {
-  const statusEl = document.getElementById("status");
-  const progressEl = document.getElementById("progress");
-  const downloadHealthEl = document.getElementById("downloadHealth");
-  const btn = document.getElementById("btn");
+  const goToJobsBtn = document.getElementById("goToJobsBtn");
+  const readyBtn = document.getElementById("readyBtn");
+  const pageMessageEl = document.getElementById("pageMessage");
+  const actionMessageEl = document.getElementById("actionMessage");
 
-  // Get active tab
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) {
-    statusEl.textContent = "Cannot detect active tab.";
-    return;
+  let activeTab = null;
+  let popupState = buildPopupState ? buildPopupState(null) : {
+    canScrape: false,
+    goToJobsUrl: "https://www.linkedin.com/jobs/search/",
+    pageMessage: "Open a LinkedIn Jobs search page to enable Ready to Scrape."
+  };
+
+  goToJobsBtn.addEventListener("click", async () => {
+    if (activeTab?.id) {
+      await chrome.tabs.update(activeTab.id, { url: popupState.goToJobsUrl });
+      window.close();
+      return;
+    }
+
+    await chrome.tabs.create({ url: popupState.goToJobsUrl });
+  });
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    activeTab = tab || null;
+    popupState = buildPopupState ? buildPopupState(activeTab) : popupState;
+    render();
+  } catch (error) {
+    pageMessageEl.textContent = "Unable to inspect the active tab.";
+    readyBtn.disabled = true;
   }
-  activeTabId = tab.id;
 
-  const isJobsPage = tab.url && tab.url.includes("linkedin.com/jobs");
+  readyBtn.addEventListener("click", async () => {
+    if (!activeTab?.id || !popupState.canScrape) {
+      return;
+    }
 
-  if (!isJobsPage) {
-    statusEl.textContent = "Open a LinkedIn Jobs search page first.";
-    btn.textContent = "▶ Start Scraping";
-    btn.disabled = true;
-    return;
-  }
+    readyBtn.disabled = true;
+    actionMessageEl.textContent = "";
 
-  // Check for in-progress scrape
-  const { scrapeState } = await chrome.storage.local.get("scrapeState");
-  const { failedDownloads = [] } = await chrome.storage.local.get("failedDownloads");
-  renderDownloadHealth(failedDownloads.length);
-  if (scrapeState && scrapeState.running) {
-    setScrapingState(scrapeState.scraped, scrapeState.page);
-  } else {
-    setIdleState();
-  }
-
-  btn.addEventListener("click", async () => {
-    if (!isRunning) {
-      // Inject content script if not already present (handles the "tab loaded before extension" case)
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId: activeTabId },
-          files: CONTENT_SCRIPT_FILES
-        });
-      } catch (e) {
-        // Already injected or can't inject — proceed anyway
-      }
-      // Fire-and-forget — content script doesn't sendResponse so awaiting would time out
-      chrome.tabs.sendMessage(activeTabId, { action: "start" }).catch(e => {
-        console.error('[LinkedInScraper] sendMessage failed:', e.message);
-        statusEl.textContent = "Could not connect to page — try reloading the LinkedIn tab.";
-        statusEl.classList.add("error");
-        isRunning = false;
-        btn.textContent = "▶ Start Scraping";
-        btn.classList.remove("stop");
-      });
-      setScrapingState(0, 1);
-    } else {
-      chrome.tabs.sendMessage(activeTabId, { action: "stop" }).catch(() => {});
-      chrome.storage.local.remove('scrapeState');
-      setIdleState();
+    try {
+      await ensureScraperScripts(activeTab.id);
+      await chrome.tabs.sendMessage(activeTab.id, { action: "openControls" });
+      window.close();
+    } catch (error) {
+      actionMessageEl.textContent = "Could not open the in-page controls. Refresh the LinkedIn tab and try again.";
+      readyBtn.disabled = false;
     }
   });
 
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.action === "progress") {
-      if (msg.error) {
-        statusEl.textContent = msg.error;
-        statusEl.classList.add("error");
-      } else {
-        const totalStr = msg.total ? ` / ${msg.total}` : '';
-        progressEl.textContent = `Scraping... ${msg.scraped}${totalStr} jobs · Page ${msg.page}`;
-      }
-    } else if (msg.action === "done") {
-      setDoneState(msg.total, msg.folder);
-    } else if (msg.action === "downloadStatusChanged") {
-      renderDownloadHealth(msg.failedCount || 0, msg.message);
-    }
-  });
-
-  function setIdleState() {
-    isRunning = false;
-    statusEl.textContent = "Ready to scrape.";
-    statusEl.classList.remove("error");
-    progressEl.textContent = "";
-    btn.textContent = "▶ Start Scraping";
-    btn.disabled = false;
-    btn.classList.remove("stop");
-  }
-
-  function setScrapingState(scraped, page) {
-    isRunning = true;
-    statusEl.textContent = "Scraping in progress...";
-    statusEl.classList.remove("error");
-    progressEl.textContent = scraped > 0 ? `Scraping... ${scraped} jobs · Page ${page}` : "";
-    btn.textContent = "⏹ Stop";
-    btn.disabled = false;
-    btn.classList.add("stop");
-  }
-
-  function setDoneState(total, folder) {
-    isRunning = false;
-    statusEl.textContent = `✓ Complete — ${total} jobs saved to ${folder}/`;
-    statusEl.classList.remove("error");
-    progressEl.textContent = "";
-    btn.textContent = "▶ Start Scraping";
-    btn.disabled = false;
-    btn.classList.remove("stop");
-  }
-
-  function renderDownloadHealth(failedCount, message) {
-    const fallbackMessage = typeof formatDownloadHealthMessage === "function"
-      ? formatDownloadHealthMessage(failedCount)
-      : (failedCount ? `Failed downloads: ${failedCount} (see chrome.storage.local)` : "");
-    downloadHealthEl.textContent = message || fallbackMessage;
-    downloadHealthEl.classList.toggle("error", failedCount > 0);
+  function render() {
+    pageMessageEl.textContent = popupState.pageMessage;
+    pageMessageEl.classList.toggle("ready", popupState.canScrape);
+    readyBtn.disabled = !popupState.canScrape;
   }
 });
+
+async function ensureScraperScripts(tabId) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { action: "ping" });
+  } catch (error) {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content_script_bootstrap.js"]
+    });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        globalThis.LinkedInScraperBootstrap?.resetBootstrapState(globalThis, document);
+      }
+    });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: CONTENT_SCRIPT_FILES
+    });
+  }
+}

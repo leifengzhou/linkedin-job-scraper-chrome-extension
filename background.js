@@ -1,4 +1,4 @@
-importScripts("download_recovery.js", "content_script_files.js");
+importScripts("download_recovery.js");
 
 const {
   buildFailedDownloadRecord,
@@ -6,27 +6,10 @@ const {
   shouldRetryDownload,
   trimFailedDownloads
 } = globalThis.LinkedInScraperDownloadRecovery;
-const {
-  CONTENT_SCRIPT_FILES
-} = globalThis.LinkedInScraperContentScriptFiles;
-
 const FAILED_DOWNLOADS_KEY = "failedDownloads";
 const RETRY_BACKOFF_MS = 500;
 const pendingDownloads = new Map();
 let nextRequestId = 1;
-
-chrome.action.onClicked.addListener(async (tab) => {
-  if (!tab.id || !tab.url || !tab.url.includes("linkedin.com/jobs")) {
-    return;
-  }
-
-  try {
-    await ensureScraperScripts(tab.id);
-    await chrome.tabs.sendMessage(tab.id, { action: "openControls" });
-  } catch (error) {
-    console.error("[LinkedInScraper] Failed to open in-page controls:", error.message || error);
-  }
-});
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "downloadJsonExport") {
@@ -155,27 +138,6 @@ async function appendFailedDownload(record) {
 async function getFailedDownloads() {
   const result = await chrome.storage.local.get(FAILED_DOWNLOADS_KEY);
   return Array.isArray(result[FAILED_DOWNLOADS_KEY]) ? result[FAILED_DOWNLOADS_KEY] : [];
-}
-
-async function ensureScraperScripts(tabId) {
-  try {
-    await chrome.tabs.sendMessage(tabId, { action: "ping" });
-  } catch (error) {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["content_script_bootstrap.js"]
-    });
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        globalThis.LinkedInScraperBootstrap?.resetBootstrapState(globalThis, document);
-      }
-    });
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: CONTENT_SCRIPT_FILES
-    });
-  }
 }
 
 function sleep(ms) {
