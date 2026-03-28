@@ -7,10 +7,10 @@ const {
   isSupportedLinkedInJobsUrl
 } = require("../popup_state.js");
 
-test("isSupportedLinkedInJobsUrl accepts LinkedIn Jobs search pages", () => {
+test("isSupportedLinkedInJobsUrl rejects LinkedIn Jobs search pages", () => {
   assert.equal(
     isSupportedLinkedInJobsUrl("https://www.linkedin.com/jobs/search/?keywords=engineer"),
-    true
+    false
   );
 });
 
@@ -21,10 +21,10 @@ test("isSupportedLinkedInJobsUrl accepts LinkedIn Jobs search-results pages", ()
   );
 });
 
-test("isSupportedLinkedInJobsUrl accepts LinkedIn Jobs search-result pages", () => {
+test("isSupportedLinkedInJobsUrl rejects LinkedIn Jobs search-result pages", () => {
   assert.equal(
     isSupportedLinkedInJobsUrl("https://www.linkedin.com/jobs/search-result/?keywords=design"),
-    true
+    false
   );
 });
 
@@ -34,7 +34,7 @@ test("isSupportedLinkedInJobsUrl rejects unsupported LinkedIn pages", () => {
 
 test("buildPopupState enables scraping on supported pages", () => {
   assert.deepEqual(
-    buildPopupState({ url: "https://www.linkedin.com/jobs/search/?keywords=engineer" }),
+    buildPopupState({ url: "https://www.linkedin.com/jobs/search-results/?keywords=engineer" }),
     {
       canScrape: true,
       goToJobsUrl: LINKEDIN_JOBS_HOME_URL,
@@ -49,7 +49,7 @@ test("buildPopupState disables scraping when the current page is unsupported", (
     {
       canScrape: false,
       goToJobsUrl: LINKEDIN_JOBS_HOME_URL,
-      pageMessage: "Open a LinkedIn Jobs search page to enable Ready to Scrape."
+      pageMessage: "Open a LinkedIn Jobs search-results page to enable Ready to Scrape."
     }
   );
 });
@@ -60,7 +60,7 @@ test("buildPopupState handles missing active tab context", () => {
     {
       canScrape: false,
       goToJobsUrl: LINKEDIN_JOBS_HOME_URL,
-      pageMessage: "Open a LinkedIn Jobs search page to enable Ready to Scrape."
+      pageMessage: "Open a LinkedIn Jobs search-results page to enable Ready to Scrape."
     }
   );
 });
