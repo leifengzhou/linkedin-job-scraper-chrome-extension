@@ -1,8 +1,7 @@
 (function (root) {
-  const LINKEDIN_JOBS_HOME_URL = "https://www.linkedin.com/jobs/search/";
+  const LINKEDIN_JOBS_HOME_URL = "https://www.linkedin.com/jobs/search-results/";
   const SUPPORTED_PATH_PATTERNS = [
-    /^\/jobs\/search(?:\/|$)/,
-    /^\/jobs\/search-result(?:s)?(?:\/|$)/
+    /^\/jobs\/search-results(?:\/|$)/
   ];
 
   function isSupportedLinkedInJobsUrl(url) {
@@ -32,7 +31,7 @@
       goToJobsUrl: LINKEDIN_JOBS_HOME_URL,
       pageMessage: canScrape
         ? "This page is ready. Click Ready to Scrape to open the in-page controls."
-        : "Open a LinkedIn Jobs search page to enable Ready to Scrape."
+        : "Open a LinkedIn Jobs search-results page to enable Ready to Scrape."
     };
   }
 

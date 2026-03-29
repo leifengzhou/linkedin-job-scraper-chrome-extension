@@ -10,8 +10,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   let activeTab = null;
   let popupState = buildPopupState ? buildPopupState(null) : {
     canScrape: false,
-    goToJobsUrl: "https://www.linkedin.com/jobs/search/",
-    pageMessage: "Open a LinkedIn Jobs search page to enable Ready to Scrape."
+    goToJobsUrl: "https://www.linkedin.com/jobs/search-results/",
+    pageMessage: "Open a LinkedIn Jobs search-results page to enable Ready to Scrape."
   };
 
   goToJobsBtn.addEventListener("click", async () => {

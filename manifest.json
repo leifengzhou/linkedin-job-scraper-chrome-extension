@@ -20,6 +20,6 @@
   },
   "content_scripts": [{
     "matches": ["https://www.linkedin.com/jobs/*"],
-    "js": ["retry_policy.js", "job_dom_adapters.js", "description_utils.js", "scrape_session.js", "in_page_controls.js", "json_export.js", "content_script_bootstrap.js", "content_script.js"]
+    "js": ["retry_policy.js", "job_dom_adapters.js", "scrape_session.js", "in_page_controls.js", "json_export.js", "content_script_bootstrap.js", "content_script.js"]
   }]
 }

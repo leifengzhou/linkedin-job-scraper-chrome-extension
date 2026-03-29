@@ -53,12 +53,11 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
     stopRun
   } = globalThis.LinkedInScraperSession;
   const {
-    findSectionContext,
-    readSectionText
-  } = globalThis.LinkedInScraperDescriptionUtils;
-  const {
+    extractApplyAction,
     extractCardData: extractCardDataFromDom,
     extractDetailData,
+    findAboutCompanySection,
+    findAboutJobSection,
     findDetailRoot,
     findJobListContainer,
     findNextPageButton,
@@ -316,7 +315,7 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
       console.log(`[LinkedInScraper] [${cardIndex + 1}/${cards.length}] Card: "${cardData.title}" @ ${cardData.company}`);
 
       const prevJobId = new URLSearchParams(window.location.search).get("currentJobId") || "";
-      const prevDetailSnapshot = getDetailSnapshot(document);
+      const prevDetailSnapshot = getCurrentDetailSnapshot();
 
       card.click();
 
@@ -573,61 +572,27 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
     const cardData = extractCardDataFromDom(card);
     const detailRoot = findDetailRoot(document);
     const detailData = extractDetailData(detailRoot);
-
-    let aboutJobContext = findSectionContext(detailRoot, "About the job", {
-      textSelectors: ["#job-details", '[data-testid="expandable-text-box"]']
-    });
-    let aboutCompanyContext = findSectionContext(detailRoot, "About the company", {
-      textSelectors: [".jobs-company__company-description", ".jobs-company__company-description .inline-show-more-text", '[data-testid="expandable-text-box"]'],
-      expandButtonSelectors: [".inline-show-more-text__button", '[data-testid="expandable-text-button"]']
-    });
-    let description = await readSectionText({
-      textEl: aboutJobContext.textEl,
-      expandButtonEl: aboutJobContext.expandButtonEl,
-      expandButtonSelectors: ['[data-testid="expandable-text-button"]'],
-      sleep
-    });
-    let aboutCompany = await readAboutCompanySection(detailRoot, aboutCompanyContext, detailData.aboutCompany, true);
-
-    aboutJobContext = findSectionContext(detailRoot, "About the job", {
-      textSelectors: ["#job-details", '[data-testid="expandable-text-box"]']
-    });
-    aboutCompanyContext = findSectionContext(detailRoot, "About the company", {
-      textSelectors: [".jobs-company__company-description", ".jobs-company__company-description .inline-show-more-text", '[data-testid="expandable-text-box"]'],
-      expandButtonSelectors: [".inline-show-more-text__button", '[data-testid="expandable-text-button"]']
-    });
-    description = await readSectionText({
-      textEl: aboutJobContext.textEl,
-      expandButtonEl: null,
-      expandButtonSelectors: ['[data-testid="expandable-text-button"]'],
-      sleep
-    }) || detailData.description || "(Description not available)";
-    aboutCompany = await readAboutCompanySection(detailRoot, aboutCompanyContext, detailData.aboutCompany, false);
-
-    let applyUrl = `https://www.linkedin.com/jobs/view/${jobId}/`;
-    let applyType = cardData.applyType;
-
-    if (applyType !== "Easy Apply") {
-      const externalBtn = document.querySelector('a[aria-label="Apply on company website"]');
-      if (externalBtn) {
-        applyType = "Apply on company website";
-        const rawHref = externalBtn.getAttribute("href") || "";
-        try {
-          const urlObj = new URL(rawHref, "https://www.linkedin.com");
-          const redirectUrl = urlObj.searchParams.get("url");
-          if (redirectUrl) {
-            const decoded = decodeURIComponent(redirectUrl);
-            applyUrl = /^https?:\/\//i.test(decoded) ? decoded : rawHref;
-          } else {
-            applyUrl = rawHref;
-          }
-        } catch {
-          applyUrl = rawHref;
-        }
-      }
-    }
-
     const linkedinUrl = `https://www.linkedin.com/jobs/view/${jobId}/`;
+    let aboutJobSection = findAboutJobSection(detailRoot);
+    let aboutCompanySection = findAboutCompanySection(detailRoot);
+
+    await expandDetailSection(aboutJobSection);
+    await expandDetailSection(aboutCompanySection);
+
+    const rereadDetailRoot = findDetailRoot(document) || detailRoot;
+    const applyAction = extractApplyAction(rereadDetailRoot);
+    aboutJobSection = findAboutJobSection(rereadDetailRoot);
+    aboutCompanySection = findAboutCompanySection(rereadDetailRoot);
+
+    const description = readDetailSectionText(aboutJobSection) ||
+      detailData.description ||
+      "(Description not available)";
+    const aboutCompany = readDetailSectionText(aboutCompanySection) ||
+      detailData.aboutCompany ||
+      "";
+    const applyUrl = applyAction.href || linkedinUrl;
+    const applyType = applyAction.applyType || cardData.applyType;
+
     return {
       ...cardData,
       title: detailData.title || cardData.title,
@@ -641,6 +606,44 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
       description,
       aboutCompany
     };
+  }
+
+  async function expandDetailSection(sectionContext) {
+    if (!sectionContext?.expandButtonEl) {
+      return;
+    }
+
+    sectionContext.expandButtonEl.click();
+    await sleep(300);
+  }
+
+  function readDetailSectionText(sectionContext) {
+    if (!sectionContext?.textEl) {
+      return "";
+    }
+
+    return getTextWithoutExpandButtons(sectionContext.textEl, ['[data-testid="expandable-text-button"]']);
+  }
+
+  function getTextWithoutExpandButtons(textEl, expandButtonSelectors) {
+    if (!textEl) {
+      return "";
+    }
+
+    if (typeof textEl.cloneNode === "function") {
+      const clone = textEl.cloneNode(true);
+      if (typeof clone.querySelectorAll === "function") {
+        for (const selector of expandButtonSelectors) {
+          for (const button of clone.querySelectorAll(selector)) {
+            button.remove();
+          }
+        }
+      }
+
+      return (clone.innerText || clone.textContent || "").trim();
+    }
+
+    return (textEl.innerText || textEl.textContent || "").trim();
   }
 
   function waitForNewCards(leftPanel) {
@@ -728,61 +731,6 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
     return null;
   }
 
-  async function readAboutCompanySection(detailRoot, aboutCompanyContext, fallbackText, allowExpand) {
-    if (!aboutCompanyContext.missingSection) {
-      return await readSectionText({
-        textEl: aboutCompanyContext.textEl,
-        expandButtonEl: allowExpand ? aboutCompanyContext.expandButtonEl : null,
-        expandButtonSelectors: [".inline-show-more-text__button", '[data-testid="expandable-text-button"]'],
-        sleep
-      }) || fallbackText || "";
-    }
-
-    const waitedText = await waitForOptionalText(detailRoot, [
-      ".jobs-company__company-description",
-      ".jobs-company__company-description .inline-show-more-text",
-      '.jobs-company [data-testid="expandable-text-box"]'
-    ], 1500);
-
-    return waitedText || fallbackText || "";
-  }
-
-  function waitForOptionalText(rootNode, selectors, timeoutMs) {
-    const readText = () => {
-      for (const selector of selectors) {
-        const el = rootNode?.querySelector?.(selector);
-        const text = (el?.innerText || el?.textContent || "").trim();
-        if (text) {
-          return text;
-        }
-      }
-      return "";
-    };
-
-    const initial = readText();
-    if (initial) {
-      return Promise.resolve(initial);
-    }
-
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        observer.disconnect();
-        resolve(readText());
-      }, timeoutMs);
-
-      const observer = new MutationObserver(() => {
-        const nextText = readText();
-        if (nextText) {
-          clearTimeout(timeout);
-          observer.disconnect();
-          resolve(nextText);
-        }
-      });
-
-      observer.observe(rootNode, { childList: true, subtree: true, characterData: true });
-    });
-  }
-
   function waitForJobIdChange(prevJobId, timeoutMs = 5000) {
     return new Promise((resolve) => {
       const check = () => new URLSearchParams(window.location.search).get("currentJobId");
@@ -809,37 +757,89 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
   }
 
   function waitForDetailChange(prevSnapshot, timeoutMs = 5000) {
+    const initialDetailRoot = findDetailRoot(document);
+    if (!initialDetailRoot && !prevSnapshot) {
+      return Promise.resolve("");
+    }
+
     return new Promise((resolve) => {
+      let observer = null;
+      let observedDetailRoot = initialDetailRoot;
+
+      const stopObserving = () => {
+        if (observer) {
+          observer.disconnect();
+          observer = null;
+        }
+      };
+
+      const observeDetailRoot = (detailRoot) => {
+        stopObserving();
+        observedDetailRoot = detailRoot;
+
+        if (!detailRoot) {
+          return;
+        }
+
+        observer = new MutationObserver(checkForChange);
+        observer.observe(detailRoot, { childList: true, subtree: true, characterData: true });
+      };
+
       const check = () => {
-        const snapshot = getDetailSnapshot(document);
+        const detailRoot = findDetailRoot(document);
+        if (!detailRoot) {
+          return null;
+        }
+
+        if (detailRoot !== observedDetailRoot) {
+          observeDetailRoot(detailRoot);
+        }
+
+        const snapshot = getDetailSnapshot(detailRoot);
         if (!snapshot) {
           return null;
         }
+
         return snapshot !== prevSnapshot ? snapshot : null;
       };
 
+      const cleanup = () => {
+        clearTimeout(timeout);
+        clearInterval(rootPoll);
+        stopObserving();
+      };
+
+      const checkForChange = () => {
+        const result = check();
+        if (result !== null) {
+          cleanup();
+          resolve(result);
+        }
+      };
+
       const initialResult = check();
-      if (initialResult) {
+      if (initialResult !== null) {
         resolve(initialResult);
         return;
       }
 
       const timeout = setTimeout(() => {
-        observer.disconnect();
-        resolve(getDetailSnapshot(document));
+        cleanup();
+        resolve(getCurrentDetailSnapshot());
       }, timeoutMs);
 
-      const observer = new MutationObserver(() => {
-        const result = check();
-        if (result) {
-          clearTimeout(timeout);
-          observer.disconnect();
-          resolve(result);
-        }
-      });
-
-      observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+      const rootPoll = setInterval(checkForChange, 100);
+      observeDetailRoot(initialDetailRoot);
     });
+  }
+
+  function getCurrentDetailSnapshot() {
+    const detailRoot = findDetailRoot(document);
+    if (!detailRoot) {
+      return "";
+    }
+
+    return getDetailSnapshot(detailRoot);
   }
 
   function sleep(ms) {

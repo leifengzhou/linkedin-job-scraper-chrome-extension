@@ -1,23 +1,13 @@
 (function (root) {
-  const LEGACY_CONTAINER_SELECTOR = '[data-component-type="LazyColumn"]';
-  const SEARCH_CONTAINER_SELECTORS = [
-    ".jobs-search-results-list",
-    ".jobs-search-results-list__list",
-    ".scaffold-layout__list",
-    '.jobs-search-results-list, .jobs-search-results-list__list'
-  ];
-  const LEGACY_CARD_SELECTOR = 'div[role="button"][componentkey]';
-  const SEARCH_CARD_SELECTOR = 'div[data-job-id].job-card-container';
-  const DETAIL_ROOT_SELECTORS = [
-    ".jobs-search__job-details--wrapper",
-    ".jobs-search__job-details--container",
-    ".jobs-details__main-content",
-    "main"
-  ];
+  const RESULTS_LIST_SELECTOR = '[data-testid="lazy-column"][componentkey="SearchResultsMainContent"]';
+  const RESULTS_CARD_SELECTOR = 'div[role="button"][componentkey]';
+  const RESULTS_DISMISS_SELECTOR = 'button[aria-label^="Dismiss"]';
+  const DETAILS_SCREEN_SELECTOR = '[data-sdui-screen="com.linkedin.sdui.flagshipnav.jobs.SemanticJobDetails"]';
+  const ABOUT_JOB_SECTION_SELECTOR = '[componentkey^="JobDetails_AboutTheJob_"]';
+  const ABOUT_COMPANY_SECTION_SELECTOR = '[componentkey^="JobDetails_AboutTheCompany_"]';
   const NEXT_PAGE_SELECTORS = [
     'button[data-testid="pagination-controls-next-button-visible"]',
-    'button[aria-label="View next page"]',
-    ".jobs-search-pagination__button--next"
+    'button[aria-label="View next page"]'
   ];
 
   function getText(el) {
@@ -43,58 +33,41 @@
     return null;
   }
 
-  function findJobListContainer(doc = document) {
-    const legacyContainer = doc.querySelector ? doc.querySelector(LEGACY_CONTAINER_SELECTOR) : null;
-    if (legacyContainer?.querySelector?.(LEGACY_CARD_SELECTOR)) {
-      return legacyContainer;
-    }
-
-    const occludableListItem = doc.querySelector ? doc.querySelector('li[data-occludable-job-id]') : null;
-    const occludableList = occludableListItem?.closest?.("ul") || null;
-    if (occludableList) {
-      return occludableList;
-    }
-
-    for (const selector of SEARCH_CONTAINER_SELECTORS) {
-      const container = doc.querySelector ? doc.querySelector(selector) : null;
-      if (container?.querySelector?.(SEARCH_CARD_SELECTOR) || container?.querySelectorAll?.(SEARCH_CARD_SELECTOR)?.length) {
-        return container;
-      }
-    }
-
-    return legacyContainer || null;
-  }
-
-  function getJobCards(rootNode = document) {
-    const container = typeof rootNode.getAttribute !== "function" && typeof rootNode.querySelector === "function"
-      ? findJobListContainer(rootNode)
-      : rootNode;
-
-    if (!container?.querySelectorAll) {
+  function findAll(rootNode, selector) {
+    if (!rootNode || typeof rootNode.querySelectorAll !== "function") {
       return [];
     }
 
-    const searchCards = Array.from(container.querySelectorAll(SEARCH_CARD_SELECTOR));
-    if (searchCards.length > 0) {
-      return searchCards;
-    }
-
-    const legacyCards = Array.from(container.querySelectorAll(LEGACY_CARD_SELECTOR));
-    const dismissibleCards = legacyCards.filter((card) => card.querySelector?.('button[aria-label^="Dismiss"]'));
-    return dismissibleCards.length > 0 ? dismissibleCards : legacyCards;
+    return Array.from(rootNode.querySelectorAll(selector) || []);
   }
 
-  function getCardKey(card) {
-    if (!card) {
+  function isDetailRoot(node) {
+    return node?.getAttribute?.("data-sdui-screen") === "com.linkedin.sdui.flagshipnav.jobs.SemanticJobDetails";
+  }
+
+  function findJobListContainer(doc = document) {
+    const list = doc?.querySelector?.(RESULTS_LIST_SELECTOR) || null;
+    if (!list) {
       return null;
     }
 
-    return (
-      card.getAttribute?.("componentkey") ||
-      card.getAttribute?.("data-job-id") ||
-      extractJobIdFromHref(card.querySelector?.('a[href*="/jobs/view/"]')?.getAttribute?.("href")) ||
-      null
-    );
+    const hasDismissibleCard = findAll(list, RESULTS_CARD_SELECTOR)
+      .some((card) => card?.querySelector?.(RESULTS_DISMISS_SELECTOR));
+
+    return hasDismissibleCard ? list : null;
+  }
+
+  function getJobCards(rootNode = document) {
+    const container = rootNode?.getAttribute?.("componentkey") === "SearchResultsMainContent"
+      ? rootNode
+      : findJobListContainer(rootNode);
+
+    if (!container) {
+      return [];
+    }
+
+    return findAll(container, RESULTS_CARD_SELECTOR)
+      .filter((card) => card?.querySelector?.(RESULTS_DISMISS_SELECTOR));
   }
 
   function extractJobIdFromHref(href) {
@@ -106,55 +79,107 @@
     return match ? match[1] : "";
   }
 
-  function extractCardData(card) {
-    const searchTitle = getText(findFirst(card, [".job-card-list__title--link", '.job-card-container__link']));
-    const searchCompany = getText(findFirst(card, [
-      ".artdeco-entity-lockup__subtitle span",
-      ".artdeco-entity-lockup__subtitle",
-      ".job-card-container__company-name"
-    ]));
-    const searchLocation = getText(findFirst(card, [
-      ".job-card-container__metadata-wrapper li span",
-      ".job-card-container__metadata-item",
-      ".artdeco-entity-lockup__caption li span",
-      ".artdeco-entity-lockup__caption"
-    ]));
-    if (searchTitle || searchCompany || searchLocation || card?.getAttribute?.("data-job-id")) {
-      return {
-        title: searchTitle,
-        company: searchCompany,
-        location: searchLocation,
-        datePosted: "",
-        salary: "Not listed",
-        applyType: /\bEasy Apply\b/i.test(getText(card)) ? "Easy Apply" : "Apply"
-      };
+  function getCardKey(card) {
+    if (!card) {
+      return null;
     }
 
-    const dismissBtn = card?.querySelector?.('button[aria-label^="Dismiss"]');
-    let title = dismissBtn
-      ? (dismissBtn.getAttribute("aria-label") || "").replace(/^Dismiss\s+/, "").replace(/\s+job$/, "").trim()
-      : "";
-    title = title.replace(/\s*\(Verified job\)\s*$/, "").trim();
+    const stableJobId = (
+      card.getAttribute?.("data-job-id") ||
+      card.getAttribute?.("job-id") ||
+      card.getAttribute?.("data-occludable-job-id") ||
+      extractJobIdFromHref(card.querySelector?.('a[href*="/jobs/view/"]')?.getAttribute?.("href"))
+    );
 
-    const titleP = title
-      ? Array.from(card?.querySelectorAll?.("p") || []).find((p) => (p.textContent || "").includes(title))
-      : null;
-    const companyDiv = titleP?.nextElementSibling || null;
-    const company = getText(companyDiv?.querySelector?.("p"));
-    const location = getText(companyDiv?.nextElementSibling);
-    const dateSpan = Array.from(card?.querySelectorAll?.("span") || [])
-      .find((span) => getText(span).startsWith("Posted on"));
-    const datePosted = getText(dateSpan).replace(/^Posted on\s*/, "").trim();
-    const salaryP = Array.from(card?.querySelectorAll?.("p") || [])
-      .find((p) => /\$[\d,.]+[KM]?\/yr/.test(getText(p)));
-    const salary = getText(salaryP) || "Not listed";
-    const applyType = /\bEasy Apply\b/i.test(getText(card)) ? "Easy Apply" : "Apply";
+    return (
+      stableJobId ||
+      card.getAttribute?.("componentkey") ||
+      null
+    );
+  }
 
-    return { title, company, location, datePosted, salary, applyType };
+  function normalizeDismissTitle(label) {
+    return (label || "")
+      .replace(/^Dismiss\s+/i, "")
+      .replace(/\s+job$/i, "")
+      .replace(/\s*\(Verified job\)\s*$/i, "")
+      .trim();
+  }
+
+  function normalizeCardTitle(text) {
+    const cleaned = (text || "")
+      .replace(/\s*\(Verified job\)\s*/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!cleaned) {
+      return "";
+    }
+
+    const words = cleaned.split(" ");
+    if (words.length % 2 === 0) {
+      const midpoint = words.length / 2;
+      const firstHalf = words.slice(0, midpoint).join(" ");
+      const secondHalf = words.slice(midpoint).join(" ");
+      if (firstHalf && firstHalf === secondHalf) {
+        return firstHalf;
+      }
+    }
+
+    return cleaned;
+  }
+
+  function isSalaryText(text) {
+    return /\$\s*[\d,.]+(?:[KkMm])?(?:\s*-\s*\$\s*[\d,.]+(?:[KkMm])?)?\s*\/(?:hr|yr)\b/i.test(text);
+  }
+
+  function isApplyText(text) {
+    return /\bEasy Apply\b|\bApply on company website\b|\bApply\b/i.test(text);
+  }
+
+  function isMetaSeparator(text) {
+    return text === "·" || text === "•";
+  }
+
+  function extractCardData(card) {
+    const dismissLabel = card?.querySelector?.(RESULTS_DISMISS_SELECTOR)?.getAttribute?.("aria-label") || "";
+    const dismissTitle = normalizeDismissTitle(dismissLabel);
+    const paragraphs = findAll(card, "p")
+      .map((p) => getText(p))
+      .filter(Boolean)
+      .filter((text) => !isMetaSeparator(text));
+    const title = dismissTitle || normalizeCardTitle(paragraphs[0]);
+    const company = paragraphs[1] || "";
+    const location = paragraphs.find((text, index) => (
+      index > 1 &&
+      text !== title &&
+      text !== company &&
+      !isSalaryText(text) &&
+      !isApplyText(text)
+    )) || "";
+    const postedSpan = findAll(card, "span")
+      .map((span) => getText(span))
+      .find((text) => /^Posted on\b/i.test(text)) || "";
+    const salary = paragraphs.find((text) => isSalaryText(text)) || "Not listed";
+    const applyType = paragraphs.find((text) => isApplyText(text)) ||
+      (/\bEasy Apply\b/i.test(getText(card)) ? "Easy Apply" : "");
+
+    return {
+      title: title || dismissTitle,
+      company,
+      location,
+      datePosted: postedSpan.replace(/^Posted on\s*/i, "").trim(),
+      salary,
+      applyType
+    };
   }
 
   function findDetailRoot(doc = document) {
-    return findFirst(doc, DETAIL_ROOT_SELECTORS) || doc;
+    if (isDetailRoot(doc)) {
+      return doc;
+    }
+
+    return doc?.querySelector?.(DETAILS_SCREEN_SELECTOR) || null;
   }
 
   function findNextPageButton(doc = document) {
@@ -162,7 +187,7 @@
   }
 
   function parseTopCardMeta(text) {
-    const parts = text
+    const parts = (text || "")
       .split("·")
       .map((part) => part.trim())
       .filter(Boolean);
@@ -173,40 +198,156 @@
     };
   }
 
+  function findDetailTitle(detailRoot) {
+    const jobLinks = findAll(detailRoot, 'a[href*="/jobs/view/"]');
+    const titleLink = jobLinks.find((link) => {
+      const href = link?.getAttribute?.("href") || "";
+      const text = getText(link);
+      return /\/jobs\/view\/\d+\/?(?:\?|$)/.test(href) && text && !/\bEasy Apply\b/i.test(text);
+    });
+
+    return getText(titleLink) || getText(findFirst(detailRoot, ["h1"]));
+  }
+
+  function findDetailMetaText(detailRoot) {
+    const explicitMeta = findAll(detailRoot, '[data-testid="job-details-top-card-metadata"]')
+      .map((el) => getText(el))
+      .find(Boolean);
+    if (explicitMeta) {
+      return explicitMeta;
+    }
+
+    return findAll(detailRoot, "p")
+      .map((el) => getText(el))
+      .find((text) => /·/.test(text) && /\bago\b/i.test(text)) || "";
+  }
+
+  function getSectionContext(sectionRoot) {
+    if (!sectionRoot) {
+      return {
+        textEl: null,
+        expandButtonEl: null,
+        missingSection: true
+      };
+    }
+
+    return {
+      textEl: sectionRoot.querySelector?.('[data-testid="expandable-text-box"]') || null,
+      expandButtonEl: sectionRoot.querySelector?.('[data-testid="expandable-text-button"]') || null,
+      missingSection: false
+    };
+  }
+
+  function findAboutJobSection(rootNode = document) {
+    const detailRoot = findDetailRoot(rootNode) || rootNode;
+    return getSectionContext(detailRoot?.querySelector?.(ABOUT_JOB_SECTION_SELECTOR) || null);
+  }
+
+  function findAboutCompanySection(rootNode = document) {
+    const detailRoot = findDetailRoot(rootNode) || rootNode;
+    return getSectionContext(detailRoot?.querySelector?.(ABOUT_COMPANY_SECTION_SELECTOR) || null);
+  }
+
   function extractDetailData(rootNode = document) {
     const detailRoot = findDetailRoot(rootNode);
-    const title = getText(findFirst(detailRoot, [
-      ".job-details-jobs-unified-top-card__job-title",
-      "h1 a[href*=\"/jobs/view/\"]",
-      "h1"
-    ]));
-    const company = getText(findFirst(detailRoot, [
-      ".job-details-jobs-unified-top-card__company-name",
-      "a[href*=\"/company/\"]"
-    ]));
-    const metaText = getText(findFirst(detailRoot, [
-      ".job-details-jobs-unified-top-card__tertiary-description-container",
-      ".jobs-unified-top-card__primary-description",
-      ".jobs-details-top-card__primary-description"
-    ]));
+    if (!detailRoot) {
+      return {
+        title: "",
+        company: "",
+        location: "",
+        datePosted: "",
+        description: "",
+        aboutCompany: ""
+      };
+    }
+
+    const title = findDetailTitle(detailRoot);
+    const company = findAll(detailRoot, 'a[href*="/company/"]')
+      .map((link) => getText(link))
+      .find(Boolean) || "";
+    const metaText = findDetailMetaText(detailRoot);
     const meta = parseTopCardMeta(metaText);
-    const description = getText(findFirst(detailRoot, [
-      "#job-details",
-      '[data-testid="expandable-text-box"]'
-    ]));
-    const aboutCompany = getText(findFirst(detailRoot, [
-      ".jobs-company__company-description",
-      ".jobs-company__company-description .inline-show-more-text",
-      '.jobs-company [data-testid="expandable-text-box"]'
-    ]));
+    const aboutJob = findAboutJobSection(detailRoot);
+    const aboutCompany = findAboutCompanySection(detailRoot);
 
     return {
       title,
       company,
       location: meta.location,
       datePosted: meta.datePosted,
-      description,
-      aboutCompany
+      description: getText(aboutJob.textEl),
+      aboutCompany: getText(aboutCompany.textEl)
+    };
+  }
+
+  function decodeLinkedInRedirectUrl(href) {
+    if (!href) {
+      return "";
+    }
+
+    try {
+      const url = new URL(href, "https://www.linkedin.com");
+      const redirected = url.searchParams.get("url");
+      if (redirected) {
+        return decodeURIComponent(redirected);
+      }
+
+      if (/^https?:\/\//i.test(href) && !/linkedin\.com/i.test(url.hostname)) {
+        return href;
+      }
+    } catch {
+      if (/^https?:\/\//i.test(href) && !/linkedin\.com/i.test(href)) {
+        return href;
+      }
+    }
+
+    return "";
+  }
+
+  function findEasyApplyAction(detailRoot) {
+    const easyApplyLink = detailRoot?.querySelector?.('a[aria-label*="Easy Apply"]') || null;
+    if (easyApplyLink) {
+      return easyApplyLink;
+    }
+
+    return detailRoot?.querySelector?.('button[aria-label*="Easy Apply"]') || null;
+  }
+
+  function findCompanyWebsiteApplyLink(detailRoot) {
+    return findAll(detailRoot, "a")
+      .find((link) => {
+        const ariaLabel = link?.getAttribute?.("aria-label") || "";
+        return /apply/i.test(ariaLabel) && /website/i.test(ariaLabel);
+      }) || null;
+  }
+
+  function extractApplyAction(rootNode = document) {
+    const detailRoot = findDetailRoot(rootNode) || rootNode;
+    const easyApplyAction = findEasyApplyAction(detailRoot);
+    if (easyApplyAction) {
+      return {
+        applyType: "Easy Apply",
+        href: "",
+        ariaLabel: easyApplyAction.getAttribute?.("aria-label") || "",
+        isEasyApply: true
+      };
+    }
+
+    const externalLink = findCompanyWebsiteApplyLink(detailRoot);
+    if (externalLink) {
+      return {
+        applyType: "Apply on company website",
+        href: decodeLinkedInRedirectUrl(externalLink.getAttribute?.("href") || ""),
+        ariaLabel: externalLink.getAttribute?.("aria-label") || "",
+        isEasyApply: false
+      };
+    }
+
+    return {
+      applyType: "",
+      href: "",
+      ariaLabel: "",
+      isEasyApply: false
     };
   }
 
@@ -216,8 +357,11 @@
   }
 
   const api = {
+    extractApplyAction,
     extractCardData,
     extractDetailData,
+    findAboutCompanySection,
+    findAboutJobSection,
     findDetailRoot,
     findJobListContainer,
     findNextPageButton,
