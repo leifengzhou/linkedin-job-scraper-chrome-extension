@@ -210,12 +210,10 @@ function createFixtureSearchCard() {
       "aria-label": "Dismiss Senior Product Manager job"
     }
   });
-  const titleText = requireFixtureMatch(
-    /<span aria-hidden="true">Senior Product Manager/,
-    "expected fixture visible card title span"
-  )[0]
-    .replace(/<[^>]+>/g, "")
-    .trim();
+  const titleText = createFixtureTextElementFromMatch(
+    /<p class="[^"]*fcdf9933[^"]*">[\s\S]*?<\/p>/,
+    "expected fixture raw card title paragraph"
+  ).innerText;
   const companyText = requireFixtureMatch(
     /<p class="[^"]*">Motion Recruitment<\/p>/,
     "expected fixture card company text"

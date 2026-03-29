@@ -106,6 +106,29 @@
       .trim();
   }
 
+  function normalizeCardTitle(text) {
+    const cleaned = (text || "")
+      .replace(/\s*\(Verified job\)\s*/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!cleaned) {
+      return "";
+    }
+
+    const words = cleaned.split(" ");
+    if (words.length % 2 === 0) {
+      const midpoint = words.length / 2;
+      const firstHalf = words.slice(0, midpoint).join(" ");
+      const secondHalf = words.slice(midpoint).join(" ");
+      if (firstHalf && firstHalf === secondHalf) {
+        return firstHalf;
+      }
+    }
+
+    return cleaned;
+  }
+
   function isSalaryText(text) {
     return /\$\s*[\d,.]+(?:[KkMm])?(?:\s*-\s*\$\s*[\d,.]+(?:[KkMm])?)?\s*\/(?:hr|yr)\b/i.test(text);
   }
@@ -125,7 +148,7 @@
       .map((p) => getText(p))
       .filter(Boolean)
       .filter((text) => !isMetaSeparator(text));
-    const title = paragraphs[0] || dismissTitle;
+    const title = dismissTitle || normalizeCardTitle(paragraphs[0]);
     const company = paragraphs[1] || "";
     const location = paragraphs.find((text, index) => (
       index > 1 &&
