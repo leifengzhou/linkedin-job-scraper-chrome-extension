@@ -95,6 +95,29 @@ function createFixtureElementFromTag(tagHtml) {
   });
 }
 
+function requireFixtureMatch(regex, message) {
+  const match = SEARCH_RESULTS_FIXTURE_HTML.match(regex);
+  assert.ok(match, message);
+  return match;
+}
+
+function stripFixtureHtml(html) {
+  return decodeHtmlEntities(
+    (html || "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
+function createFixtureTextElementFromMatch(regex, message) {
+  const match = requireFixtureMatch(regex, message);
+  return createElement({
+    innerText: stripFixtureHtml(match[0]),
+    textContent: stripFixtureHtml(match[0])
+  });
+}
+
 function createFixtureHtmlRoot(html) {
   return {
     querySelector(selector) {
@@ -116,6 +139,122 @@ function createFixtureHtmlRoot(html) {
       return [];
     }
   };
+}
+
+function createFixtureDetailRoot() {
+  const titleLinkTag = requireFixtureMatch(
+    /<a\b[^>]*href="https:\/\/www\.linkedin\.com\/jobs\/view\/4382994905\/\?[^"]*"[^>]*>Senior Product Manager<\/a>/,
+    "expected fixture title link in detail header"
+  )[0];
+  const applyLinkTag = requireFixtureMatch(
+    /<a\b[^>]*aria-label="Easy Apply to this job"[^>]*>/,
+    "expected fixture Easy Apply link in detail header"
+  )[0];
+  const companyLinkTag = requireFixtureMatch(
+    /<a\b[^>]*href="https:\/\/www\.linkedin\.com\/company\/motion-recruitment-partners\/life\/"[^>]*>Motion Recruitment<\/a>/,
+    "expected fixture company link in detail header"
+  )[0];
+  const metaEl = createFixtureTextElementFromMatch(
+    /<p\b[^>]*><span class="_2da8c981">Englewood Cliffs, NJ<\/span>[\s\S]*?<span class="_2da8c981">Over 100 applicants<\/span><\/p>/,
+    "expected fixture metadata paragraph in detail header"
+  );
+  const aboutJobTextEl = createFixtureTextElementFromMatch(
+    /<span[^>]*data-testid="expandable-text-box">[\s\S]*?<strong>Qualifications<\/strong>[\s\S]*?<\/span>/,
+    "expected fixture About the job expandable text"
+  );
+  const aboutCompanyTextEl = createFixtureTextElementFromMatch(
+    /<span[^>]*data-testid="expandable-text-box">Motion Recruitment, a Kelly® Company,[\s\S]*?Functional\./,
+    "expected fixture About the company expandable text"
+  );
+  const aboutJobSection = createElement({
+    query: {
+      '[data-testid="expandable-text-box"]': aboutJobTextEl
+    }
+  });
+  const aboutCompanySection = createElement({
+    query: {
+      '[data-testid="expandable-text-box"]': aboutCompanyTextEl
+    }
+  });
+
+  return createElement({
+    attributes: {
+      "data-sdui-screen": "com.linkedin.sdui.flagshipnav.jobs.SemanticJobDetails"
+    },
+    query: {
+      [ABOUT_JOB_SECTION_SELECTOR]: aboutJobSection,
+      [ABOUT_COMPANY_SECTION_SELECTOR]: aboutCompanySection
+    },
+    queryAll: {
+      'a[href*="/company/"]': [
+        Object.assign(createFixtureElementFromTag(companyLinkTag), {
+          innerText: "Motion Recruitment",
+          textContent: "Motion Recruitment"
+        })
+      ],
+      'a[href*="/jobs/view/"]': [
+        Object.assign(createFixtureElementFromTag(titleLinkTag), {
+          innerText: "Senior Product Manager",
+          textContent: "Senior Product Manager"
+        }),
+        createFixtureElementFromTag(applyLinkTag)
+      ],
+      p: [metaEl]
+    }
+  });
+}
+
+function createFixtureSearchCard() {
+  const dismissButton = createElement({
+    attributes: {
+      "aria-label": "Dismiss Senior Product Manager job"
+    }
+  });
+  const titleText = requireFixtureMatch(
+    /<span aria-hidden="true">Senior Product Manager/,
+    "expected fixture visible card title span"
+  )[0]
+    .replace(/<[^>]+>/g, "")
+    .trim();
+  const companyText = requireFixtureMatch(
+    /<p class="[^"]*">Motion Recruitment<\/p>/,
+    "expected fixture card company text"
+  )[0]
+    .replace(/<[^>]+>/g, "")
+    .trim();
+  const locationText = requireFixtureMatch(
+    /<p class="[^"]*">Englewood Cliffs, NJ \(On-site\)<\/p>/,
+    "expected fixture card location text"
+  )[0]
+    .replace(/<[^>]+>/g, "")
+    .trim();
+  const salaryText = requireFixtureMatch(
+    /<p class="[^"]*">\$95\/hr - \$135\/hr<\/p>/,
+    "expected fixture card salary text"
+  )[0]
+    .replace(/<[^>]+>/g, "")
+    .trim();
+  const postedText = createFixtureTextElementFromMatch(
+    /<span class="fd37a291">Posted on March 9, 2026, 11:34 AM<\/span>/,
+    "expected fixture posted date span"
+  );
+
+  return createElement({
+    textContent: "Viewed Easy Apply",
+    query: {
+      [RESULTS_DISMISS_SELECTOR]: dismissButton
+    },
+    queryAll: {
+      p: [
+        createElement({ innerText: titleText }),
+        createElement({ innerText: companyText }),
+        createElement({ innerText: locationText }),
+        createElement({ innerText: salaryText }),
+        createElement({ innerText: "Easy Apply" })
+      ],
+      span: [postedText]
+    }
+  });
 }
 
 test("findJobListContainer returns the search-results main lazy column when it contains dismissible role-button cards", () => {
@@ -225,6 +364,17 @@ test("extractCardData reads title company location posted date salary and easy a
   });
 });
 
+test("extractCardData handles the fixture-backed search-results card title markup", () => {
+  assert.deepEqual(extractCardData(createFixtureSearchCard()), {
+    title: "Senior Product Manager",
+    company: "Motion Recruitment",
+    location: "Englewood Cliffs, NJ (On-site)",
+    datePosted: "March 9, 2026, 11:34 AM",
+    salary: "$95/hr - $135/hr",
+    applyType: "Easy Apply"
+  });
+});
+
 test("findDetailRoot returns the semantic job-details screen instead of the page-wide main element", () => {
   const detailRoot = createElement({ attributes: { "data-sdui-screen": "com.linkedin.sdui.flagshipnav.jobs.SemanticJobDetails" } });
   const mainEl = createElement();
@@ -243,56 +393,15 @@ test("findDetailRoot returns the semantic job-details screen instead of the page
   assert.equal(findDetailRoot(doc), detailRoot);
 });
 
-test("extractDetailData reads search-results detail metadata without using search-page classes", () => {
-  const titleHeading = createElement({ innerText: "Senior Product Manager" });
-  const companyLink = createElement({ innerText: "Motion Recruitment" });
-  const meta = createElement({ innerText: "Englewood Cliffs, NJ (On-site) · 2 weeks ago · 3 applicants" });
-  const description = createElement({ innerText: "About the job\nLead roadmap execution." });
-  const aboutCompany = createElement({ innerText: "Motion Recruitment connects teams with technology talent." });
-  const aboutJobSection = createElement({
-    query: {
-      '[data-testid="expandable-text-box"]': description
-    }
-  });
-  const aboutCompanySection = createElement({
-    query: {
-      '[data-testid="expandable-text-box"]': aboutCompany
-    }
-  });
-  const unrelatedCompanyLink = createElement({ innerText: "Wrong Company" });
-  const detailRoot = createElement({
-    query: {
-      "h1": titleHeading,
-      'a[href*="/company/"]': companyLink,
-      [ABOUT_JOB_SECTION_SELECTOR]: aboutJobSection,
-      [ABOUT_COMPANY_SECTION_SELECTOR]: aboutCompanySection
-    },
-    queryAll: {
-      "h1": [titleHeading],
-      'a[href*="/company/"]': [companyLink],
-      '[data-testid="job-details-top-card-metadata"]': [meta]
-    }
-  });
-  const doc = {
-    querySelector(selector) {
-      if (selector === DETAILS_SCREEN_SELECTOR) {
-        return detailRoot;
-      }
-      if (selector === 'a[href*="/company/"]') {
-        return unrelatedCompanyLink;
-      }
-      return null;
-    }
-  };
+test("extractDetailData reads fixture-backed search-results detail metadata from the real detail header structure", () => {
+  const detailData = extractDetailData(createFixtureDetailRoot());
 
-  assert.deepEqual(extractDetailData(doc), {
-    title: "Senior Product Manager",
-    company: "Motion Recruitment",
-    location: "Englewood Cliffs, NJ (On-site)",
-    datePosted: "2 weeks ago",
-    description: "About the job\nLead roadmap execution.",
-    aboutCompany: "Motion Recruitment connects teams with technology talent."
-  });
+  assert.equal(detailData.title, "Senior Product Manager");
+  assert.equal(detailData.company, "Motion Recruitment");
+  assert.equal(detailData.location, "Englewood Cliffs, NJ");
+  assert.equal(detailData.datePosted, "2 weeks ago");
+  assert.match(detailData.description, /The ideal candidate will be responsible for managing the roadmap/i);
+  assert.match(detailData.aboutCompany, /Motion Recruitment, a Kelly® Company/i);
 });
 
 test("findAboutJobSection returns the About the job expandable text block", () => {

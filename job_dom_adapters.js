@@ -175,6 +175,30 @@
     };
   }
 
+  function findDetailTitle(detailRoot) {
+    const jobLinks = findAll(detailRoot, 'a[href*="/jobs/view/"]');
+    const titleLink = jobLinks.find((link) => {
+      const href = link?.getAttribute?.("href") || "";
+      const text = getText(link);
+      return /\/jobs\/view\/\d+\/?(?:\?|$)/.test(href) && text && !/\bEasy Apply\b/i.test(text);
+    });
+
+    return getText(titleLink) || getText(findFirst(detailRoot, ["h1"]));
+  }
+
+  function findDetailMetaText(detailRoot) {
+    const explicitMeta = findAll(detailRoot, '[data-testid="job-details-top-card-metadata"]')
+      .map((el) => getText(el))
+      .find(Boolean);
+    if (explicitMeta) {
+      return explicitMeta;
+    }
+
+    return findAll(detailRoot, "p")
+      .map((el) => getText(el))
+      .find((text) => /·/.test(text) && /\bago\b/i.test(text)) || "";
+  }
+
   function getSectionContext(sectionRoot) {
     if (!sectionRoot) {
       return {
@@ -214,13 +238,11 @@
       };
     }
 
-    const title = getText(findFirst(detailRoot, ["h1"]));
+    const title = findDetailTitle(detailRoot);
     const company = findAll(detailRoot, 'a[href*="/company/"]')
       .map((link) => getText(link))
       .find(Boolean) || "";
-    const metaText = findAll(detailRoot, '[data-testid="job-details-top-card-metadata"]')
-      .map((el) => getText(el))
-      .find(Boolean) || "";
+    const metaText = findDetailMetaText(detailRoot);
     const meta = parseTopCardMeta(metaText);
     const aboutJob = findAboutJobSection(detailRoot);
     const aboutCompany = findAboutCompanySection(detailRoot);
