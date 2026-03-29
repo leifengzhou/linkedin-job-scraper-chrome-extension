@@ -758,7 +758,7 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
 
   function waitForDetailChange(prevSnapshot, timeoutMs = 5000) {
     const initialDetailRoot = findDetailRoot(document);
-    if (!initialDetailRoot) {
+    if (!initialDetailRoot && !prevSnapshot) {
       return Promise.resolve("");
     }
 

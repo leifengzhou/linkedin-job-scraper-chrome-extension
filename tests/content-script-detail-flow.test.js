@@ -529,7 +529,7 @@ test("waitForDetailChange observes the current semantic detail root instead of d
   assert.deepEqual(observedSnapshotTargets, [detailRoot, detailRoot]);
 });
 
-test("waitForDetailChange returns an empty snapshot when the semantic detail root is absent at the outset", async () => {
+test("waitForDetailChange returns an empty snapshot when the semantic detail root is absent at the outset and no prior snapshot exists", async () => {
   const timerControls = createTimerControls();
   const { api, observers } = loadContentScriptTestApi({
     adapters: {
@@ -543,12 +543,54 @@ test("waitForDetailChange returns an empty snapshot when the semantic detail roo
     timerControls
   });
 
-  const resultPromise = api.waitForDetailChange("before", 5000);
+  const resultPromise = api.waitForDetailChange("", 5000);
   timerControls.runPending();
   const result = await resultPromise;
 
   assert.equal(result, "");
   assert.equal(observers.length, 0);
+});
+
+test("waitForDetailChange keeps waiting when the semantic detail root is absent at the outset but a prior snapshot exists", async () => {
+  const newDetailRoot = { id: "detail-root-new" };
+  const observedSnapshotTargets = [];
+  let currentDetailRoot = null;
+  let currentSnapshot = "before";
+  let resolvedSnapshot;
+  const timerControls = createTimerControls();
+  const { api, observers } = loadContentScriptTestApi({
+    adapters: {
+      findDetailRoot() {
+        return currentDetailRoot;
+      },
+      getDetailSnapshot(rootNode) {
+        observedSnapshotTargets.push(rootNode);
+        return currentSnapshot;
+      }
+    },
+    timerControls
+  });
+
+  const waitPromise = api.waitForDetailChange("before", 5000);
+  waitPromise.then((snapshot) => {
+    resolvedSnapshot = snapshot;
+  });
+
+  await Promise.resolve();
+  assert.equal(resolvedSnapshot, undefined);
+  assert.equal(observers.length, 0);
+
+  currentDetailRoot = newDetailRoot;
+  currentSnapshot = "after";
+  timerControls.runIntervals();
+  await Promise.resolve();
+
+  assert.equal(resolvedSnapshot, "after");
+  assert.equal(timerControls.pendingTimeoutCount(), 0);
+
+  const result = await waitPromise;
+  assert.equal(result, "after");
+  assert.deepEqual(observedSnapshotTargets, [newDetailRoot]);
 });
 
 test("waitForDetailChange keeps waiting through semantic detail root remount and resolves with the new snapshot", async () => {
