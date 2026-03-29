@@ -59,7 +59,6 @@ function createTimerControls() {
 
 function loadContentScriptTestApi({
   adapters = {},
-  descriptionUtils = {},
   documentOverrides = {},
   locationSearch = "?currentJobId=123",
   timerControls = createTimerControls()
@@ -221,16 +220,6 @@ function loadContentScriptTestApi({
     startRun() {},
     stopRun() {}
   };
-  sandbox.LinkedInScraperDescriptionUtils = Object.assign({
-    findSectionContext() {
-      return {
-        textEl: null,
-        expandButtonEl: null,
-        missingSection: true
-      };
-    },
-    readSectionText: async () => ""
-  }, descriptionUtils);
   sandbox.LinkedInScraperJobDomAdapters = Object.assign({
     extractCardData() {
       return {};
@@ -358,24 +347,6 @@ test("collectCurrentJobData prefers search-results detail metadata over card fal
           missingSection: false
         };
       }
-    },
-    descriptionUtils: {
-      findSectionContext(_rootNode, headingText) {
-        if (headingText === "About the company") {
-          return {
-            textEl: createTextElement("Legacy company block"),
-            expandButtonEl: null,
-            missingSection: false
-          };
-        }
-
-        return {
-          textEl: detailDescription,
-          expandButtonEl: null,
-          missingSection: false
-        };
-      },
-      readSectionText: async ({ textEl }) => (textEl?.innerText || "").trim()
     }
   });
 
@@ -430,24 +401,6 @@ test("collectCurrentJobData reads About the company from the dedicated search-re
           missingSection: false
         };
       }
-    },
-    descriptionUtils: {
-      findSectionContext(_rootNode, headingText) {
-        if (headingText === "About the company") {
-          return {
-            textEl: createTextElement("Legacy company block"),
-            expandButtonEl: null,
-            missingSection: false
-          };
-        }
-
-        return {
-          textEl: detailDescription,
-          expandButtonEl: null,
-          missingSection: false
-        };
-      },
-      readSectionText: async ({ textEl }) => (textEl?.innerText || "").trim()
     }
   });
 
@@ -492,16 +445,6 @@ test("collectCurrentJobData falls back to the LinkedIn permalink when no externa
       findDetailRoot() {
         return detailRoot;
       }
-    },
-    descriptionUtils: {
-      findSectionContext() {
-        return {
-          textEl: detailDescription,
-          expandButtonEl: null,
-          missingSection: false
-        };
-      },
-      readSectionText: async ({ textEl }) => (textEl?.innerText || "").trim()
     },
     documentOverrides: {
       querySelector(selector) {
@@ -560,7 +503,7 @@ test("waitForDetailChange observes the current semantic detail root instead of d
   assert.deepEqual(observedSnapshotTargets, [detailRoot, detailRoot]);
 });
 
-test("waitForDetailChange returns an empty snapshot when the semantic detail root is absent", async () => {
+test("waitForDetailChange returns an empty snapshot when the semantic detail root is absent at the outset", async () => {
   const timerControls = createTimerControls();
   const { api, observers } = loadContentScriptTestApi({
     adapters: {
@@ -580,4 +523,53 @@ test("waitForDetailChange returns an empty snapshot when the semantic detail roo
 
   assert.equal(result, "");
   assert.equal(observers.length, 0);
+});
+
+test("waitForDetailChange keeps waiting through semantic detail root remount and resolves with the new snapshot", async () => {
+  const oldDetailRoot = { id: "detail-root-old" };
+  const newDetailRoot = { id: "detail-root-new" };
+  const observedSnapshotTargets = [];
+  let currentDetailRoot = oldDetailRoot;
+  let currentSnapshot = "before";
+  let resolvedSnapshot;
+  const timerControls = createTimerControls();
+  const { api, observers, document } = loadContentScriptTestApi({
+    adapters: {
+      findDetailRoot() {
+        return currentDetailRoot;
+      },
+      getDetailSnapshot(rootNode) {
+        observedSnapshotTargets.push(rootNode);
+        return currentSnapshot;
+      }
+    },
+    documentOverrides: {
+      body: { id: "body-root" }
+    },
+    timerControls
+  });
+
+  const waitPromise = api.waitForDetailChange("before", 5000);
+  waitPromise.then((snapshot) => {
+    resolvedSnapshot = snapshot;
+  });
+
+  assert.equal(observers.length, 1);
+  assert.equal(observers[0].target, oldDetailRoot);
+  assert.notEqual(observers[0].target, document.body);
+
+  currentDetailRoot = null;
+  observers[0].trigger();
+  await Promise.resolve();
+
+  assert.equal(resolvedSnapshot, undefined);
+
+  currentDetailRoot = newDetailRoot;
+  currentSnapshot = "after";
+  timerControls.runPending();
+
+  const result = await waitPromise;
+  assert.equal(result, "after");
+  assert.equal(resolvedSnapshot, "after");
+  assert.deepEqual(observedSnapshotTargets, [oldDetailRoot, newDetailRoot]);
 });

@@ -766,7 +766,7 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
       const check = () => {
         const detailRoot = findDetailRoot(document);
         if (!detailRoot) {
-          return "";
+          return null;
         }
 
         const snapshot = getDetailSnapshot(detailRoot);
