@@ -9,7 +9,7 @@ A Chrome Extension (Manifest V3) that scrapes LinkedIn job search results and ex
 - Unwraps LinkedIn redirect URLs to get direct company apply links
 - Buffers extracted jobs in memory and downloads one JSON export only when the user clicks `Download`
 - Opens a guidance popup from the extension icon on every page
-- Launches the existing in-page scraper modal from the popup on supported LinkedIn Jobs search pages
+- Launches the existing in-page scraper modal from the popup on supported LinkedIn Jobs `search-results/*` pages
 - Supports `Start`, `Pause`, `Resume`, `Stop`, and `Download` directly in the page
 - Lets the user set a per-run target count from `1` to `500`, defaulting to `25`
 - Keeps a persistent reopen chip when the modal is closed mid-run
@@ -17,7 +17,7 @@ A Chrome Extension (Manifest V3) that scrapes LinkedIn job search results and ex
 - Automatically retries an interrupted final export download for up to 5 seconds
 - Logs unrecoverable final export download failures to extension storage for inspection
 - Handles pagination automatically
-- Supports both the legacy LinkedIn jobs results layout and the newer `/jobs/search/` results layout
+- Supports the current LinkedIn Jobs `search-results/*` results layout
 
 ## Installation
 
@@ -28,10 +28,10 @@ No build step required — the extension loads directly from source.
 3. Enable **Developer Mode** (toggle in top-right)
 4. Click **Load Unpacked** and select the cloned directory
 5. Sign in to LinkedIn
-6. Navigate to a LinkedIn job search page (e.g. `linkedin.com/jobs/search/...`)
+6. Navigate to a LinkedIn Jobs search-results page (e.g. `linkedin.com/jobs/search-results/...`)
 7. Search for a specific role and apply filters such as location and date posted
 8. Click the extension icon to open the popup
-9. Click **Ready to Scrape** to open the in-page controls
+9. Click **Ready to Scrape** on the `search-results/*` page to open the in-page controls
 10. Set **Jobs to scrape** if you want something other than `25`
 11. Click **Start** in the in-page modal
 
@@ -98,7 +98,7 @@ json_export.js      → Run-local JSON export buffer and payload helpers
 
 1. Clicking the **extension icon** always opens the popup
 2. The popup tells the user to sign in, search for a specific role, and apply filters before scraping
-3. On supported LinkedIn Jobs search pages, clicking **Ready to Scrape** opens the existing in-page scraper controls
+3. On supported LinkedIn Jobs `search-results/*` pages, clicking **Ready to Scrape** opens the existing in-page scraper controls
 4. **Start** begins a scrape in the current tab; **Pause** finishes the current job then halts before the next one
 5. The **content script** iterates through job cards in the left panel, clicking each one
 6. For each card, it snapshots the URL and description *before* clicking, then waits for both to change — this prevents reading stale data from the previous job
@@ -130,31 +130,21 @@ To inspect them:
 ## Manual Verification
 
 - Reload the unpacked extension
-- Refresh the LinkedIn Jobs tab
-- Test once on the newer `/jobs/search/` layout and once on a legacy results layout if LinkedIn serves both in your account
-- Click the extension icon on a non-LinkedIn page and confirm the popup opens
-- Confirm the popup shows the LinkedIn Jobs button, sign-in guidance, setup instructions, and a disabled **Ready to Scrape** button on unsupported pages
-- Click the extension icon on a supported LinkedIn Jobs search page and confirm **Ready to Scrape** becomes enabled
+- Open a LinkedIn Jobs `search-results/*` page and refresh the tab
+- Click the extension icon on a non-LinkedIn page and confirm the popup opens with **Ready to Scrape** disabled
+- Click the extension icon on a LinkedIn Jobs `/jobs/search/` page and confirm **Ready to Scrape** stays disabled
+- Click the extension icon on a supported LinkedIn Jobs `search-results/*` page and confirm **Ready to Scrape** becomes enabled
 - Click **Ready to Scrape** and confirm the in-page modal appears
-- Confirm the target-count input defaults to `25`
-- Start a scrape from the in-page modal
-- Confirm progress updates and pagination behavior while no file downloads during the active run
-- Close the modal and confirm the reopen chip remains visible
-- Reopen from the chip and confirm progress is preserved
+- Confirm the scraper enumerates cards from the left `SearchResultsMainContent` results column
+- Start a scrape and confirm title, company, location, date posted, salary, and apply type export correctly
+- Confirm `About the job` expands from the dedicated `JobDetails_AboutTheJob_*` section and exports correctly
+- Confirm `About the company` expands from the dedicated `JobDetails_AboutTheCompany_*` section and exports correctly
+- Confirm external company apply links export when present, otherwise the LinkedIn job permalink is used
+- Confirm the visible next-page button advances pagination
+- Confirm progress updates while no file downloads during the active run
 - Pause mid-run and confirm the current job finishes before the scraper halts
-- Confirm `Download` is disabled while the scraper is still running
-- Confirm `Download` becomes enabled after pause
-- Click `Download` while paused and confirm a JSON file appears in `~/Downloads/`
-- Resume and confirm scraping continues from the next unscraped job
-- Stop mid-run and confirm the run ends cleanly without auto-downloading
-- Click `Download` again after stop and confirm a partial JSON export downloads
-- Start a second run and confirm the visible saved/failed counts reset for the new run
-- Start a run with a small custom target such as `3` and confirm the run stops when `saved + failed` reaches `3`
-- Confirm `Download` remains enabled after a target-reached run
-- Click `Download` multiple times and confirm repeated exports work
-- Use a search with fewer available results than the target and confirm the run stops with an end-of-results message
-- Confirm healthy downloads do not incur a fixed 5-second delay
-- Confirm no file downloads unless the user clicks `Download`
+- Confirm `Download` is disabled while the scraper is still running and enabled after pause/stop/done
+- Click `Download` and confirm a JSON file appears in `~/Downloads/`
 - Open the JSON file and confirm partial jobs still appear in `jobs` with `missingFields`
 - Confirm unrecoverable extraction failures appear under `failures`
 - Confirm interrupted final export downloads retry automatically for up to 5 seconds
@@ -164,7 +154,7 @@ To inspect them:
 
 - LinkedIn's DOM structure changes frequently. The scraper uses stable attributes (`data-testid`, `aria-label`, `role`, `componentkey`) rather than CSS class names, but may still need updates if LinkedIn restructures their markup.
 - Requires an active LinkedIn session (you must be logged in).
-- Designed for LinkedIn jobs search/results layouts, including the current `/jobs/search/` experience and legacy two-pane variants.
+- Designed for the current LinkedIn Jobs `search-results/*` two-pane results layout.
 
 ## License
 
