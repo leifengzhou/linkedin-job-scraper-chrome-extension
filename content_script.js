@@ -757,16 +757,42 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
   }
 
   function waitForDetailChange(prevSnapshot, timeoutMs = 5000) {
-    const observedDetailRoot = findDetailRoot(document);
-    if (!observedDetailRoot) {
+    const initialDetailRoot = findDetailRoot(document);
+    if (!initialDetailRoot) {
       return Promise.resolve("");
     }
 
     return new Promise((resolve) => {
+      let observer = null;
+      let observedDetailRoot = initialDetailRoot;
+
+      const stopObserving = () => {
+        if (observer) {
+          observer.disconnect();
+          observer = null;
+        }
+      };
+
+      const observeDetailRoot = (detailRoot) => {
+        stopObserving();
+        observedDetailRoot = detailRoot;
+
+        if (!detailRoot) {
+          return;
+        }
+
+        observer = new MutationObserver(checkForChange);
+        observer.observe(detailRoot, { childList: true, subtree: true, characterData: true });
+      };
+
       const check = () => {
         const detailRoot = findDetailRoot(document);
         if (!detailRoot) {
           return null;
+        }
+
+        if (detailRoot !== observedDetailRoot) {
+          observeDetailRoot(detailRoot);
         }
 
         const snapshot = getDetailSnapshot(detailRoot);
@@ -777,6 +803,20 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
         return snapshot !== prevSnapshot ? snapshot : null;
       };
 
+      const cleanup = () => {
+        clearTimeout(timeout);
+        clearInterval(rootPoll);
+        stopObserving();
+      };
+
+      const checkForChange = () => {
+        const result = check();
+        if (result !== null) {
+          cleanup();
+          resolve(result);
+        }
+      };
+
       const initialResult = check();
       if (initialResult !== null) {
         resolve(initialResult);
@@ -784,20 +824,12 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
       }
 
       const timeout = setTimeout(() => {
-        observer.disconnect();
+        cleanup();
         resolve(getCurrentDetailSnapshot());
       }, timeoutMs);
 
-      const observer = new MutationObserver(() => {
-        const result = check();
-        if (result !== null) {
-          clearTimeout(timeout);
-          observer.disconnect();
-          resolve(result);
-        }
-      });
-
-      observer.observe(observedDetailRoot, { childList: true, subtree: true, characterData: true });
+      const rootPoll = setInterval(checkForChange, 100);
+      observeDetailRoot(initialDetailRoot);
     });
   }
 

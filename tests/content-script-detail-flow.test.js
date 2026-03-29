@@ -30,7 +30,8 @@ function createTextElement(text) {
 }
 
 function createTimerControls() {
-  const timers = [];
+  const timeouts = [];
+  const intervals = [];
 
   return {
     setTimeout(callback) {
@@ -38,7 +39,7 @@ function createTimerControls() {
         callback,
         cleared: false
       };
-      timers.push(timer);
+      timeouts.push(timer);
       return timer;
     },
     clearTimeout(timer) {
@@ -46,13 +47,36 @@ function createTimerControls() {
         timer.cleared = true;
       }
     },
-    runPending() {
-      while (timers.length > 0) {
-        const timer = timers.shift();
+    setInterval(callback) {
+      const timer = {
+        callback,
+        cleared: false
+      };
+      intervals.push(timer);
+      return timer;
+    },
+    clearInterval(timer) {
+      if (timer) {
+        timer.cleared = true;
+      }
+    },
+    runIntervals() {
+      for (const timer of intervals) {
         if (!timer.cleared) {
           timer.callback();
         }
       }
+    },
+    runPending() {
+      while (timeouts.length > 0) {
+        const timer = timeouts.shift();
+        if (!timer.cleared) {
+          timer.callback();
+        }
+      }
+    },
+    pendingTimeoutCount() {
+      return timeouts.filter((timer) => !timer.cleared).length;
     }
   };
 }
@@ -137,7 +161,9 @@ function loadContentScriptTestApi({
     },
     MutationObserver: FakeMutationObserver,
     setTimeout: timerControls.setTimeout.bind(timerControls),
-    clearTimeout: timerControls.clearTimeout.bind(timerControls)
+    clearTimeout: timerControls.clearTimeout.bind(timerControls),
+    setInterval: timerControls.setInterval.bind(timerControls),
+    clearInterval: timerControls.clearInterval.bind(timerControls)
   };
 
   sandbox.window = sandbox;
@@ -566,7 +592,11 @@ test("waitForDetailChange keeps waiting through semantic detail root remount and
 
   currentDetailRoot = newDetailRoot;
   currentSnapshot = "after";
-  timerControls.runPending();
+  timerControls.runIntervals();
+  await Promise.resolve();
+
+  assert.equal(resolvedSnapshot, "after");
+  assert.equal(timerControls.pendingTimeoutCount(), 0);
 
   const result = await waitPromise;
   assert.equal(result, "after");
