@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LinkedIn Job Scraper Privacy Policy</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f9fc;
+      --surface: #ffffff;
+      --ink: #172033;
+      --muted: #566173;
+      --line: #d9e2ec;
+      --accent: #0a66c2;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #ffffff 0%, var(--bg) 100%);
+      line-height: 1.6;
+    }
+
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 40px 20px 64px;
+    }
+
+    article {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 28px 24px;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+    }
+
+    h1,
+    h2 {
+      line-height: 1.2;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      color: var(--accent);
+      font-size: 32px;
+    }
+
+    h2 {
+      margin: 28px 0 10px;
+      font-size: 18px;
+    }
+
+    p,
+    li {
+      font-size: 15px;
+    }
+
+    .meta {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    ul {
+      padding-left: 20px;
+      margin: 10px 0 0;
+    }
+
+    a {
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <article>
+      <h1>Privacy Policy</h1>
+      <p class="meta">Effective date: March 28, 2026</p>
+      <p>
+        This Privacy Policy applies to the LinkedIn Job Scraper Chrome extension.
+        The extension is used to read job listing details from LinkedIn Jobs pages
+        and download a local JSON export requested by the user.
+      </p>
+
+      <h2>Information the extension handles</h2>
+      <p>
+        The extension handles Website content from LinkedIn Jobs pages, including
+        job titles, company names, locations, salary information, posting dates,
+        apply links, job descriptions, and related company information shown on
+        the page.
+      </p>
+      <p>
+        The extension also stores limited operational data in
+        <code>chrome.storage.local</code> for failed download recovery logs and
+        similar extension-local state.
+      </p>
+
+      <h2>How the information is used</h2>
+      <p>
+        The extension uses this information only to run the user-requested export
+        workflow and download a local JSON export of the scraped job listings to
+        the user's device.
+      </p>
+
+      <h2>Data sharing and sale</h2>
+      <p>
+        We do not sell, transfer, or share scraped job content with the developer
+        or third parties. The extension does not send scraped job data to remote
+        servers.
+      </p>
+
+      <h2>Data retention</h2>
+      <p>
+        Exported job data is saved locally by the user through Chrome's download
+        flow. Failed download recovery logs stored in extension storage remain on
+        the user's device until removed by the user or cleared by the extension.
+      </p>
+
+      <h2>Permissions used</h2>
+      <ul>
+        <li><strong>downloads</strong>: saves the user's export file locally.</li>
+        <li><strong>host permissions</strong>: accesses supported LinkedIn Jobs pages.</li>
+        <li><strong>scripting</strong>: injects the scraper controls into the active LinkedIn Jobs tab.</li>
+        <li><strong>storage</strong>: stores limited extension-local operational state.</li>
+        <li><strong>tabs</strong>: identifies the active tab and opens the supported jobs page when requested by the user.</li>
+      </ul>
+
+      <h2>Remote code</h2>
+      <p>
+        The extension does not load or execute remotely hosted code. All
+        executable code is packaged with the extension.
+      </p>
+
+      <h2>Changes to this policy</h2>
+      <p>
+        This policy may be updated to reflect changes to the extension's
+        functionality or privacy practices. The latest version will be posted at
+        this URL.
+      </p>
+    </article>
+  </main>
+</body>
+</html>
