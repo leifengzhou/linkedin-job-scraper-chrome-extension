@@ -23,7 +23,12 @@ test("buildExportJobRecord preserves job fields and annotates missing fields", (
     linkedinUrl: "https://www.linkedin.com/jobs/view/123/",
     jobId: "123",
     description: "Role details...",
-    aboutCompany: "Company details..."
+    aboutCompany: "Company details...",
+    hiringTeam: [{
+      name: "Michael Deayala",
+      linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
+      title: "Senior Recruiter"
+    }]
   }, {
     missingFields: ["aboutCompany"],
     exhaustedRetries: true
@@ -41,6 +46,11 @@ test("buildExportJobRecord preserves job fields and annotates missing fields", (
     jobId: "123",
     description: "Role details...",
     aboutCompany: "Company details...",
+    hiringTeam: [{
+      name: "Michael Deayala",
+      linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
+      title: "Senior Recruiter"
+    }],
     missingFields: ["aboutCompany"],
     exhaustedRetries: true
   });
@@ -56,7 +66,8 @@ test("appendExportJob counts partial jobs separately without treating them as fa
     applyUrl: "https://distyl.example/jobs/123",
     jobId: "123",
     description: "Role details...",
-    aboutCompany: ""
+    aboutCompany: "",
+    hiringTeam: []
   }, {
     missingFields: ["aboutCompany"],
     exhaustedRetries: true
@@ -76,7 +87,12 @@ test("buildJsonExportPayload summarizes saved partial and failed results", () =>
     applyUrl: "https://distyl.example/jobs/123",
     jobId: "123",
     description: "Role details...",
-    aboutCompany: "Company details..."
+    aboutCompany: "Company details...",
+    hiringTeam: [{
+      name: "Michael Deayala",
+      linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
+      title: "Senior Recruiter"
+    }]
   }, {
     missingFields: [],
     exhaustedRetries: false
@@ -88,7 +104,8 @@ test("buildJsonExportPayload summarizes saved partial and failed results", () =>
     applyUrl: "https://acme.example/jobs/456",
     jobId: "456",
     description: "Build systems",
-    aboutCompany: ""
+    aboutCompany: "",
+    hiringTeam: []
   }, {
     missingFields: ["aboutCompany"],
     exhaustedRetries: true
@@ -127,7 +144,12 @@ test("buildJobJsonFileDescriptor creates a dated json path for one saved job", (
       applyUrl: "https://distyl.example/jobs/123",
       jobId: "123",
       description: "Role details...",
-      aboutCompany: "Company details..."
+      aboutCompany: "Company details...",
+      hiringTeam: [{
+        name: "Michael Deayala",
+        linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
+        title: "Senior Recruiter"
+      }]
     }, {
       missingFields: [],
       exhaustedRetries: false
@@ -136,6 +158,11 @@ test("buildJobJsonFileDescriptor creates a dated json path for one saved job", (
 
   assert.equal(descriptor.filename, "scraped-jobs/2026-05-04/Distyl-AI_AI-Strategist_123.json");
   assert.equal(descriptor.payload.jobId, "123");
+  assert.deepEqual(descriptor.payload.hiringTeam, [{
+    name: "Michael Deayala",
+    linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
+    title: "Senior Recruiter"
+  }]);
 });
 
 test("buildPerJobJsonFileDescriptors creates one json file per saved job only", () => {
@@ -147,7 +174,12 @@ test("buildPerJobJsonFileDescriptors creates one json file per saved job only", 
     applyUrl: "https://distyl.example/jobs/123",
     jobId: "123",
     description: "Role details...",
-    aboutCompany: "Company details..."
+    aboutCompany: "Company details...",
+    hiringTeam: [{
+      name: "Michael Deayala",
+      linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
+      title: "Senior Recruiter"
+    }]
   }, {
     missingFields: [],
     exhaustedRetries: false
@@ -159,7 +191,8 @@ test("buildPerJobJsonFileDescriptors creates one json file per saved job only", 
     applyUrl: "https://acme.example/jobs/456",
     jobId: "456",
     description: "Build systems",
-    aboutCompany: ""
+    aboutCompany: "",
+    hiringTeam: []
   }, {
     missingFields: ["aboutCompany"],
     exhaustedRetries: true

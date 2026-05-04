@@ -194,8 +194,11 @@ function loadContentScriptTestApi({
     buildJsonExportPayload() {
       return { kind: "aggregate" };
     },
-    buildPerJobJsonFileDescriptors() {
-      return [];
+    buildPerJobJsonFileDescriptors({ runDate, buffer }) {
+      return (buffer?.jobs || []).map((jobRecord) => ({
+        filename: `scraped-jobs/${runDate}/${jobRecord.jobId || "unknown"}.json`,
+        payload: jobRecord
+      }));
     },
     createJsonExportBuffer() {
       return { jobs: [], failures: [], partialCount: 0 };
@@ -271,7 +274,8 @@ function loadContentScriptTestApi({
         location: "",
         datePosted: "",
         description: "",
-        aboutCompany: ""
+        aboutCompany: "",
+        hiringTeam: []
       };
     },
     extractApplyAction() {
@@ -326,6 +330,7 @@ function loadContentScriptTestApi({
   globalThis.__contentScriptTestApi = {
     collectCurrentJobData,
     handleDownloadClick,
+    normalizeJobForExport,
     session,
     setExportBuffer(value) {
       exportBuffer = value;
@@ -375,7 +380,8 @@ test("collectCurrentJobData prefers search-results detail metadata over card fal
           location: "Detail location",
           datePosted: "Detail date",
           description: "",
-          aboutCompany: ""
+          aboutCompany: "",
+          hiringTeam: []
         };
       },
       findDetailRoot() {
@@ -429,7 +435,8 @@ test("collectCurrentJobData reads About the company from the dedicated search-re
           location: "Detail location",
           datePosted: "Detail date",
           description: "",
-          aboutCompany: "Fallback about company"
+          aboutCompany: "Fallback about company",
+          hiringTeam: []
         };
       },
       findDetailRoot() {
@@ -479,7 +486,8 @@ test("collectCurrentJobData falls back to the LinkedIn permalink when no externa
           location: "Detail location",
           datePosted: "Detail date",
           description: "",
-          aboutCompany: ""
+          aboutCompany: "",
+          hiringTeam: []
         };
       },
       extractApplyAction() {
@@ -514,6 +522,80 @@ test("collectCurrentJobData falls back to the LinkedIn permalink when no externa
   const jobData = await api.collectCurrentJobData({}, "123");
 
   assert.equal(jobData.applyUrl, "https://www.linkedin.com/jobs/view/123/");
+});
+
+test("collectCurrentJobData preserves extracted hiring-team members", async () => {
+  const detailRoot = { id: "detail-root" };
+  const detailDescription = createTextElement("Expanded detail description");
+  const { api } = loadContentScriptTestApi({
+    adapters: {
+      extractCardData() {
+        return {
+          title: "Card title",
+          company: "Card company",
+          location: "Card location",
+          datePosted: "Card date",
+          salary: "Not listed",
+          applyType: ""
+        };
+      },
+      extractDetailData() {
+        return {
+          title: "Detail title",
+          company: "Detail company",
+          location: "Detail location",
+          datePosted: "Detail date",
+          description: "",
+          aboutCompany: "",
+          hiringTeam: [{
+            name: "Michael Deayala",
+            linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
+            title: "Senior Recruiter"
+          }]
+        };
+      },
+      findDetailRoot() {
+        return detailRoot;
+      },
+      findAboutJobSection() {
+        return {
+          textEl: detailDescription,
+          expandButtonEl: null,
+          missingSection: false
+        };
+      }
+    }
+  });
+
+  const jobData = await api.collectCurrentJobData({}, "123");
+
+  assert.deepEqual(jobData.hiringTeam, [{
+    name: "Michael Deayala",
+    linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
+    title: "Senior Recruiter"
+  }]);
+});
+
+test("normalizeJobForExport keeps hiring-team arrays and defaults missing values to empty arrays", () => {
+  const { api } = loadContentScriptTestApi();
+  const normalizedWithTeam = JSON.parse(JSON.stringify(api.normalizeJobForExport({
+    title: "AI Strategist",
+    company: "Distyl AI",
+    hiringTeam: [{
+      name: "Michael Deayala",
+      linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
+      title: "Senior Recruiter"
+    }]
+  })));
+  const normalizedWithoutTeam = JSON.parse(JSON.stringify(api.normalizeJobForExport({})));
+
+  assert.deepEqual(normalizedWithTeam.hiringTeam, [{
+    name: "Michael Deayala",
+    linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
+    title: "Senior Recruiter"
+  }]);
+
+  assert.deepEqual(normalizedWithoutTeam.hiringTeam, []);
 });
 
 test("waitForDetailChange observes the current semantic detail root instead of document.body", async () => {
@@ -719,6 +801,11 @@ test("handleDownloadClick sends one-json-per-job requests when that export mode 
   assert.equal(result, true);
   assert.equal(sentMessages.length, 1);
   assert.equal(sentMessages[0].action, "downloadJobJsonFiles");
-  assert.deepEqual(sentMessages[0].files, []);
+  assert.deepEqual(sentMessages[0].files, [{
+    filename: "scraped-jobs/2026-05-04/123.json",
+    payload: {
+      jobId: "123"
+    }
+  }]);
   assert.equal(sentMessages[0].timeoutMs, 5000);
 });

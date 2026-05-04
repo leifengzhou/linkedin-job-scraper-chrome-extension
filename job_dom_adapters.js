@@ -5,6 +5,8 @@
   const DETAILS_SCREEN_SELECTOR = '[data-sdui-screen="com.linkedin.sdui.flagshipnav.jobs.SemanticJobDetails"]';
   const ABOUT_JOB_SECTION_SELECTOR = '[componentkey^="JobDetails_AboutTheJob_"]';
   const ABOUT_COMPANY_SECTION_SELECTOR = '[componentkey^="JobDetails_AboutTheCompany_"]';
+  const HIRING_TEAM_HEADING_SELECTOR = "h1, h2, h3, p, span, div";
+  const HIRING_TEAM_PROFILE_SELECTOR = 'a[href*="/in/"]';
   const NEXT_PAGE_SELECTORS = [
     'button[data-testid="pagination-controls-next-button-visible"]',
     'button[aria-label="View next page"]'
@@ -248,6 +250,129 @@
     return getSectionContext(detailRoot?.querySelector?.(ABOUT_COMPANY_SECTION_SELECTOR) || null);
   }
 
+  function isHiringTeamHeading(text) {
+    return String(text || "").trim().toLowerCase() === "meet the hiring team";
+  }
+
+  function findHiringTeamSection(rootNode = document) {
+    const detailRoot = findDetailRoot(rootNode) || rootNode;
+    const headingEl = findAll(detailRoot, HIRING_TEAM_HEADING_SELECTOR)
+      .find((el) => isHiringTeamHeading(getText(el)));
+
+    if (!headingEl) {
+      return null;
+    }
+
+    let current = headingEl;
+
+    while (current) {
+      if (findAll(current, HIRING_TEAM_PROFILE_SELECTOR).length > 0) {
+        return current;
+      }
+
+      if (current === detailRoot) {
+        break;
+      }
+
+      current = current.parentElement || null;
+    }
+
+    return null;
+  }
+
+  function normalizeLinkedInProfileUrl(href) {
+    if (!href) {
+      return "";
+    }
+
+    try {
+      const url = new URL(href, "https://www.linkedin.com");
+      url.search = "";
+      url.hash = "";
+      return url.href;
+    } catch {
+      return href;
+    }
+  }
+
+  function findHighestMatchingProfileAnchor(link, sectionRoot) {
+    let current = link;
+    let highest = null;
+
+    while (current) {
+      const href = current.getAttribute?.("href") || "";
+      if (/\/in\//i.test(href)) {
+        highest = current;
+      }
+
+      if (current === sectionRoot) {
+        break;
+      }
+
+      current = current.parentElement || null;
+    }
+
+    return highest || link;
+  }
+
+  function isHiringTeamMetaLine(text) {
+    return /^[•·]?\s*\d+(?:st|nd|rd|th)$/i.test(text) ||
+      /^job poster$/i.test(text) ||
+      /^message$/i.test(text);
+  }
+
+  function extractHiringTeamTitle(memberRoot, name) {
+    const lines = getText(memberRoot)
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    return lines.find((line) => line !== name && !isHiringTeamMetaLine(line)) || "";
+  }
+
+  function extractHiringTeamMembers(rootNode = document) {
+    const sectionRoot = findHiringTeamSection(rootNode);
+    if (!sectionRoot) {
+      return [];
+    }
+
+    const memberRoots = [];
+    const seenRoots = new Set();
+
+    for (const link of findAll(sectionRoot, HIRING_TEAM_PROFILE_SELECTOR)) {
+      const memberRoot = findHighestMatchingProfileAnchor(link, sectionRoot);
+      if (seenRoots.has(memberRoot)) {
+        continue;
+      }
+
+      seenRoots.add(memberRoot);
+      memberRoots.push(memberRoot);
+    }
+
+    return memberRoots
+      .map((memberRoot) => {
+        const nestedProfileLinks = findAll(memberRoot, HIRING_TEAM_PROFILE_SELECTOR);
+        const nameLink = nestedProfileLinks
+          .find((candidate) => getText(candidate) && candidate !== memberRoot) || memberRoot;
+        const name = getText(nameLink);
+        const linkedinUrl = normalizeLinkedInProfileUrl(
+          nameLink.getAttribute?.("href") || memberRoot.getAttribute?.("href") || ""
+        );
+        const title = extractHiringTeamTitle(memberRoot, name);
+
+        if (!name || !linkedinUrl) {
+          return null;
+        }
+
+        return {
+          name,
+          linkedinUrl,
+          title
+        };
+      })
+      .filter(Boolean);
+  }
+
   function extractDetailData(rootNode = document) {
     const detailRoot = findDetailRoot(rootNode);
     if (!detailRoot) {
@@ -257,7 +382,8 @@
         location: "",
         datePosted: "",
         description: "",
-        aboutCompany: ""
+        aboutCompany: "",
+        hiringTeam: []
       };
     }
 
@@ -269,6 +395,7 @@
     const meta = parseTopCardMeta(metaText);
     const aboutJob = findAboutJobSection(detailRoot);
     const aboutCompany = findAboutCompanySection(detailRoot);
+    const hiringTeam = extractHiringTeamMembers(detailRoot);
 
     return {
       title,
@@ -276,7 +403,8 @@
       location: meta.location,
       datePosted: meta.datePosted,
       description: getText(aboutJob.textEl),
-      aboutCompany: getText(aboutCompany.textEl)
+      aboutCompany: getText(aboutCompany.textEl),
+      hiringTeam
     };
   }
 

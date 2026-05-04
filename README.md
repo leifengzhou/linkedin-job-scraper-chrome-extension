@@ -5,7 +5,7 @@ A Chrome Extension (Manifest V3) that scrapes LinkedIn job search results and ex
 ## Features
 
 - Scrapes all jobs from LinkedIn search results, page by page
-- Extracts title, company, location, salary, date posted, apply type, and full description
+- Extracts title, company, location, salary, date posted, apply type, full description, and visible hiring-team contacts
 - Unwraps LinkedIn redirect URLs to get direct company apply links
 - Buffers extracted jobs in memory and downloads JSON only when the user clicks `Download`
 - Lets the user choose between one aggregate JSON file or one JSON file per job
@@ -77,6 +77,13 @@ The aggregate JSON export contains run metadata, summary counts, successful jobs
       "jobId": "4384082246",
       "description": "Full job description text...",
       "aboutCompany": "Company overview...",
+      "hiringTeam": [
+        {
+          "name": "Michael Deayala",
+          "linkedinUrl": "https://www.linkedin.com/in/michaeldeayala/",
+          "title": "Senior Recruiter"
+        }
+      ],
       "missingFields": [],
       "exhaustedRetries": false
     }
@@ -148,6 +155,7 @@ To inspect them:
 - Start a scrape and confirm title, company, location, date posted, salary, and apply type export correctly
 - Confirm `About the job` expands from the dedicated `JobDetails_AboutTheJob_*` section and exports correctly
 - Confirm `About the company` expands from the dedicated `JobDetails_AboutTheCompany_*` section and exports correctly
+- Confirm `Meet the hiring team` exports as `hiringTeam`, and jobs without that section export `hiringTeam: []`
 - Confirm external company apply links export when present, otherwise the LinkedIn job permalink is used
 - Confirm the visible next-page button advances pagination
 - Confirm progress updates while no file downloads during the active run

@@ -36,7 +36,7 @@ function createElement({
   query = {},
   queryAll = {}
 } = {}) {
-  return {
+  const element = {
     textContent,
     innerText,
     children,
@@ -67,6 +67,14 @@ function createElement({
       return [];
     }
   };
+
+  for (const child of children) {
+    if (child && typeof child === "object" && !child.parentElement) {
+      child.parentElement = element;
+    }
+  }
+
+  return element;
 }
 
 function decodeHtmlEntities(text) {
@@ -255,6 +263,98 @@ function createFixtureSearchCard() {
   });
 }
 
+function createHiringTeamMember(name, href, title, extraLines = []) {
+  const nameLink = createElement({
+    innerText: name,
+    textContent: name,
+    attributes: {
+      href
+    }
+  });
+  const memberRoot = createElement({
+    innerText: [name, ...extraLines, title].join("\n"),
+    textContent: [name, ...extraLines, title].join("\n"),
+    attributes: {
+      href
+    },
+    queryAll: {
+      'a[href*="/in/"]': [nameLink]
+    }
+  });
+
+  nameLink.parentElement = memberRoot;
+  return memberRoot;
+}
+
+function createHiringTeamDetailRoot({ includeSection = true } = {}) {
+  const detailRoot = createElement({
+    attributes: {
+      "data-sdui-screen": "com.linkedin.sdui.flagshipnav.jobs.SemanticJobDetails"
+    }
+  });
+
+  if (!includeSection) {
+    detailRoot.querySelectorAll = function querySelectorAll(selector) {
+      if (selector === "p") {
+        return [];
+      }
+
+      return [];
+    };
+    return detailRoot;
+  }
+
+  const heading = createElement({
+    innerText: "Meet the hiring team",
+    textContent: "Meet the hiring team"
+  });
+  const firstMember = createHiringTeamMember(
+    "Michael Deayala",
+    "https://www.linkedin.com/in/michaeldeayala/",
+    "Senior Recruiter",
+    ["• 2nd", "Job poster"]
+  );
+  const secondMember = createHiringTeamMember(
+    "Taylor Rivera",
+    "https://www.linkedin.com/in/taylorrivera/",
+    "Engineering Manager"
+  );
+  const sectionRoot = createElement({
+    children: [heading, firstMember, secondMember],
+    queryAll: {
+      'a[href*="/in/"]': [
+        firstMember,
+        firstMember.querySelectorAll('a[href*="/in/"]')[0],
+        secondMember,
+        secondMember.querySelectorAll('a[href*="/in/"]')[0]
+      ]
+    }
+  });
+
+  heading.parentElement = sectionRoot;
+  firstMember.parentElement = sectionRoot;
+  secondMember.parentElement = sectionRoot;
+  sectionRoot.parentElement = detailRoot;
+
+  detailRoot.querySelectorAll = function querySelectorAll(selector) {
+    if (selector === "p") {
+      return [heading];
+    }
+
+    if (selector === 'a[href*="/company/"]' || selector === 'a[href*="/jobs/view/"]') {
+      return [];
+    }
+
+    if (selector === "h1, h2, h3, p, span, div") {
+      return [heading];
+    }
+
+    return [];
+  };
+
+  return detailRoot;
+}
+
 test("findJobListContainer returns the search-results main lazy column when it contains dismissible role-button cards", () => {
   const dismissButton = createElement({
     attributes: { "aria-label": "Dismiss Senior Product Manager job" }
@@ -400,6 +500,29 @@ test("extractDetailData reads fixture-backed search-results detail metadata from
   assert.equal(detailData.datePosted, "2 weeks ago");
   assert.match(detailData.description, /The ideal candidate will be responsible for managing the roadmap/i);
   assert.match(detailData.aboutCompany, /Motion Recruitment, a Kelly® Company/i);
+});
+
+test("extractDetailData returns all visible hiring-team members from the detail pane", () => {
+  const detailData = extractDetailData(createHiringTeamDetailRoot());
+
+  assert.deepEqual(detailData.hiringTeam, [
+    {
+      name: "Michael Deayala",
+      linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
+      title: "Senior Recruiter"
+    },
+    {
+      name: "Taylor Rivera",
+      linkedinUrl: "https://www.linkedin.com/in/taylorrivera/",
+      title: "Engineering Manager"
+    }
+  ]);
+});
+
+test("extractDetailData falls back to an empty hiring-team array when the section is absent", () => {
+  const detailData = extractDetailData(createHiringTeamDetailRoot({ includeSection: false }));
+
+  assert.deepEqual(detailData.hiringTeam, []);
 });
 
 test("findAboutJobSection returns the About the job expandable text block", () => {

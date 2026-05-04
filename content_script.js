@@ -17,10 +17,12 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
   let runDate = null;
   let controls = null;
   let exportBuffer = null;
+  let queuedPerJobFilenames = new Set();
 
   const {
     appendExportFailure,
     appendExportJob,
+    buildJobJsonFileDescriptor,
     buildExportJobRecord,
     buildPerJobJsonFileDescriptors,
     buildJsonExportPayload,
@@ -176,6 +178,7 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
     } else {
       runDate = new Date().toISOString().slice(0, 10);
       exportBuffer = createJsonExportBuffer();
+      queuedPerJobFilenames = new Set();
       startRun(session);
     }
 
@@ -422,14 +425,16 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
           );
         }
 
-        appendExportJob(exportBuffer, buildExportJobRecord(normalizeJobForExport(jobData), {
+        const jobRecord = buildExportJobRecord(normalizeJobForExport(jobData), {
           missingFields,
           exhaustedRetries
-        }));
+        });
+        appendExportJob(exportBuffer, jobRecord);
         recordJobResult(session, {
           ok: true,
           label: jobLabel
         });
+        await queuePerJobFileIfNeeded(jobRecord);
       }
 
       markPageContext(session, {
@@ -509,14 +514,35 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
 
     try {
       if (session.exportMode === "json-per-job") {
+        const files = buildPerJobJsonFileDescriptors({
+          runDate: exportDate,
+          buffer: exportBuffer
+        }).filter((file) => !queuedPerJobFilenames.has(file.filename));
+
+        if (files.length === 0) {
+          setDetailText(
+            session,
+            [
+              "All per-job downloads are already queued.",
+              `Saved ${session.savedCount}.`,
+              `Failed ${session.failedCount}.`,
+              exportBuffer.partialCount > 0 ? `Partial ${exportBuffer.partialCount}.` : ""
+            ].filter(Boolean).join(" ")
+          );
+          renderSession();
+          return true;
+        }
+
         exportResult = await chrome.runtime.sendMessage({
           action: "downloadJobJsonFiles",
-          files: buildPerJobJsonFileDescriptors({
-            runDate: exportDate,
-            buffer: exportBuffer
-          }),
+          files,
           timeoutMs: 5000
         });
+        if (exportResult?.ok) {
+          for (const file of files) {
+            queuedPerJobFilenames.add(file.filename);
+          }
+        }
       } else {
         exportResult = await chrome.runtime.sendMessage({
           action: "downloadJsonExport",
@@ -554,6 +580,39 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
     return true;
   }
 
+  async function queuePerJobFileIfNeeded(jobRecord) {
+    if (session.exportMode !== "json-per-job") {
+      return false;
+    }
+
+    const exportDate = runDate || new Date().toISOString().slice(0, 10);
+    const file = buildJobJsonFileDescriptor({
+      runDate: exportDate,
+      jobRecord
+    });
+
+    if (queuedPerJobFilenames.has(file.filename)) {
+      return true;
+    }
+
+    try {
+      const result = await chrome.runtime.sendMessage({
+        action: "queueJobJsonFile",
+        file,
+        timeoutMs: 5000
+      });
+
+      if (result?.ok) {
+        queuedPerJobFilenames.add(file.filename);
+        return true;
+      }
+    } catch (error) {
+      console.warn(`[LinkedInScraper] Could not queue per-job download for ${file.filename}:`, error);
+    }
+
+    return false;
+  }
+
   function recordExtractionFailure(label, error) {
     appendExportFailure(exportBuffer, {
       label,
@@ -584,7 +643,12 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
       linkedinUrl: jobData.linkedinUrl || "",
       jobId: jobData.jobId || "",
       description: jobData.description || "",
-      aboutCompany: jobData.aboutCompany || ""
+      aboutCompany: jobData.aboutCompany || "",
+      hiringTeam: Array.isArray(jobData.hiringTeam) ? jobData.hiringTeam.map((member) => ({
+        name: member?.name || "",
+        linkedinUrl: member?.linkedinUrl || "",
+        title: member?.title || ""
+      })) : []
     };
   }
 
@@ -624,7 +688,8 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
       applyUrl,
       applyType,
       description,
-      aboutCompany
+      aboutCompany,
+      hiringTeam: Array.isArray(detailData.hiringTeam) ? detailData.hiringTeam : []
     };
   }
 
