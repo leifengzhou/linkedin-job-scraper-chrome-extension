@@ -631,6 +631,47 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
     return `${company} - ${title}`;
   }
 
+  function getFirstName(fullName) {
+    const normalized = String(fullName || "").trim().replace(/\s+/g, " ");
+    return normalized.split(" ")[0] || "there";
+  }
+
+  function trimMessageToLimit(message, limit = 200) {
+    const normalized = String(message || "").trim().replace(/\s+/g, " ");
+    if (normalized.length <= limit) {
+      return normalized;
+    }
+
+    return `${normalized.slice(0, Math.max(0, limit - 3)).trim()}...`;
+  }
+
+  function buildLinkedInMessage({ name, jobTitle, company }) {
+    const firstName = getFirstName(name);
+    const safeCompany = String(company || "").trim() || "your company";
+    const safeJobTitle = String(jobTitle || "").trim();
+
+    if (safeJobTitle) {
+      const detailedMessage = `Hi ${firstName}, I recently applied for the ${safeJobTitle} role at ${safeCompany} and would love to connect. I'm very interested in the opportunity and in the work your team is doing. Thanks!`;
+      if (detailedMessage.length <= 200) {
+        return detailedMessage;
+      }
+
+      const shorterMessage = `Hi ${firstName}, I recently applied for the ${safeJobTitle} role at ${safeCompany} and would love to connect. Thanks!`;
+      if (shorterMessage.length <= 200) {
+        return shorterMessage;
+      }
+    }
+
+    const companyMessage = `Hi ${firstName}, I recently applied to ${safeCompany} and would love to connect. I'm very interested in the opportunity. Thanks!`;
+    if (companyMessage.length <= 200) {
+      return companyMessage;
+    }
+
+    return trimMessageToLimit(
+      `Hi ${firstName}, I recently applied to ${safeCompany} and would love to connect. Thanks!`
+    );
+  }
+
   function normalizeJobForExport(jobData) {
     return {
       title: jobData.title || "",
@@ -642,13 +683,18 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
       applyUrl: jobData.applyUrl || "",
       linkedinUrl: jobData.linkedinUrl || "",
       jobId: jobData.jobId || "",
-      description: jobData.description || "",
-      aboutCompany: jobData.aboutCompany || "",
       hiringTeam: Array.isArray(jobData.hiringTeam) ? jobData.hiringTeam.map((member) => ({
         name: member?.name || "",
         linkedinUrl: member?.linkedinUrl || "",
-        title: member?.title || ""
-      })) : []
+        memberTitle: member?.title || "",
+        linkedinMessage: buildLinkedInMessage({
+          name: member?.name || "",
+          jobTitle: jobData.title || "",
+          company: jobData.company || ""
+        })
+      })) : [],
+      description: jobData.description || "",
+      aboutCompany: jobData.aboutCompany || ""
     };
   }
 

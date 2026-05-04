@@ -592,10 +592,38 @@ test("normalizeJobForExport keeps hiring-team arrays and defaults missing values
   assert.deepEqual(normalizedWithTeam.hiringTeam, [{
     name: "Michael Deayala",
     linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
-    title: "Senior Recruiter"
+    memberTitle: "Senior Recruiter",
+    linkedinMessage: "Hi Michael, I recently applied for the AI Strategist role at Distyl AI and would love to connect. I'm very interested in the opportunity and in the work your team is doing. Thanks!"
   }]);
 
   assert.deepEqual(normalizedWithoutTeam.hiringTeam, []);
+  assert.ok(Object.keys(normalizedWithTeam).indexOf("hiringTeam") < Object.keys(normalizedWithTeam).indexOf("description"));
+});
+
+test("normalizeJobForExport keeps generated LinkedIn notes within 200 characters and falls back when the job title is missing", () => {
+  const { api } = loadContentScriptTestApi();
+  const withTitle = JSON.parse(JSON.stringify(api.normalizeJobForExport({
+    title: "Senior Software Engineer",
+    company: "Acme Corp",
+    hiringTeam: [{
+      name: "Taylor Rivera",
+      linkedinUrl: "https://www.linkedin.com/in/taylorrivera/",
+      title: "Engineering Manager"
+    }]
+  })));
+  const withoutTitle = JSON.parse(JSON.stringify(api.normalizeJobForExport({
+    company: "Acme Corp",
+    hiringTeam: [{
+      name: "Taylor Rivera",
+      linkedinUrl: "https://www.linkedin.com/in/taylorrivera/",
+      title: "Engineering Manager"
+    }]
+  })));
+
+  assert.ok(withTitle.hiringTeam[0].linkedinMessage.length <= 200);
+  assert.match(withTitle.hiringTeam[0].linkedinMessage, /Senior Software Engineer role at Acme Corp/);
+  assert.match(withoutTitle.hiringTeam[0].linkedinMessage, /applied to Acme Corp/);
+  assert.doesNotMatch(withoutTitle.hiringTeam[0].linkedinMessage, /\s{2,}|role at Acme Corp/);
 });
 
 test("waitForDetailChange observes the current semantic detail root instead of document.body", async () => {

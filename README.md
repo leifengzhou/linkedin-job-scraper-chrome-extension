@@ -75,15 +75,16 @@ The aggregate JSON export contains run metadata, summary counts, successful jobs
       "applyUrl": "https://acme.com/careers/123",
       "linkedinUrl": "https://www.linkedin.com/jobs/view/4384082246/",
       "jobId": "4384082246",
-      "description": "Full job description text...",
-      "aboutCompany": "Company overview...",
       "hiringTeam": [
         {
           "name": "Michael Deayala",
           "linkedinUrl": "https://www.linkedin.com/in/michaeldeayala/",
-          "title": "Senior Recruiter"
+          "memberTitle": "Senior Recruiter",
+          "linkedinMessage": "Hi Michael, I recently applied for the Senior Software Engineer role at Acme Corp and would love to connect. I'm very interested in the opportunity and in the work your team is doing. Thanks!"
         }
       ],
+      "description": "Full job description text...",
+      "aboutCompany": "Company overview...",
       "missingFields": [],
       "exhaustedRetries": false
     }
@@ -155,7 +156,7 @@ To inspect them:
 - Start a scrape and confirm title, company, location, date posted, salary, and apply type export correctly
 - Confirm `About the job` expands from the dedicated `JobDetails_AboutTheJob_*` section and exports correctly
 - Confirm `About the company` expands from the dedicated `JobDetails_AboutTheCompany_*` section and exports correctly
-- Confirm `Meet the hiring team` exports as `hiringTeam`, and jobs without that section export `hiringTeam: []`
+- Confirm `Meet the hiring team` exports as `hiringTeam`, with `memberTitle` and `linkedinMessage`, and jobs without that section export `hiringTeam: []`
 - Confirm external company apply links export when present, otherwise the LinkedIn job permalink is used
 - Confirm the visible next-page button advances pagination
 - Confirm progress updates while no file downloads during the active run

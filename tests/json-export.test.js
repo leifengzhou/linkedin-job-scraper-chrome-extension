@@ -27,7 +27,8 @@ test("buildExportJobRecord preserves job fields and annotates missing fields", (
     hiringTeam: [{
       name: "Michael Deayala",
       linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
-      title: "Senior Recruiter"
+      memberTitle: "Senior Recruiter",
+      linkedinMessage: "Hi Michael, I recently applied for the AI Strategist role at Distyl AI and would love to connect. I'm very interested in the opportunity and in the work your team is doing. Thanks!"
     }]
   }, {
     missingFields: ["aboutCompany"],
@@ -49,7 +50,8 @@ test("buildExportJobRecord preserves job fields and annotates missing fields", (
     hiringTeam: [{
       name: "Michael Deayala",
       linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
-      title: "Senior Recruiter"
+      memberTitle: "Senior Recruiter",
+      linkedinMessage: "Hi Michael, I recently applied for the AI Strategist role at Distyl AI and would love to connect. I'm very interested in the opportunity and in the work your team is doing. Thanks!"
     }],
     missingFields: ["aboutCompany"],
     exhaustedRetries: true
@@ -91,7 +93,8 @@ test("buildJsonExportPayload summarizes saved partial and failed results", () =>
     hiringTeam: [{
       name: "Michael Deayala",
       linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
-      title: "Senior Recruiter"
+      memberTitle: "Senior Recruiter",
+      linkedinMessage: "Hi Michael, I recently applied for the AI Strategist role at Distyl AI and would love to connect. I'm very interested in the opportunity and in the work your team is doing. Thanks!"
     }]
   }, {
     missingFields: [],
@@ -148,7 +151,8 @@ test("buildJobJsonFileDescriptor creates a dated json path for one saved job", (
       hiringTeam: [{
         name: "Michael Deayala",
         linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
-        title: "Senior Recruiter"
+        memberTitle: "Senior Recruiter",
+        linkedinMessage: "Hi Michael, I recently applied for the AI Strategist role at Distyl AI and would love to connect. I'm very interested in the opportunity and in the work your team is doing. Thanks!"
       }]
     }, {
       missingFields: [],
@@ -161,7 +165,8 @@ test("buildJobJsonFileDescriptor creates a dated json path for one saved job", (
   assert.deepEqual(descriptor.payload.hiringTeam, [{
     name: "Michael Deayala",
     linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
-    title: "Senior Recruiter"
+    memberTitle: "Senior Recruiter",
+    linkedinMessage: "Hi Michael, I recently applied for the AI Strategist role at Distyl AI and would love to connect. I'm very interested in the opportunity and in the work your team is doing. Thanks!"
   }]);
 });
 
@@ -178,7 +183,8 @@ test("buildPerJobJsonFileDescriptors creates one json file per saved job only", 
     hiringTeam: [{
       name: "Michael Deayala",
       linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
-      title: "Senior Recruiter"
+      memberTitle: "Senior Recruiter",
+      linkedinMessage: "Hi Michael, I recently applied for the AI Strategist role at Distyl AI and would love to connect. I'm very interested in the opportunity and in the work your team is doing. Thanks!"
     }]
   }, {
     missingFields: [],
