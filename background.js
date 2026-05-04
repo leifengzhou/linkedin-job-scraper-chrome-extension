@@ -16,6 +16,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     handleJsonExportRequest(msg, sendResponse);
     return true;
   }
+
+  if (msg.action === "downloadJobJsonFiles") {
+    handleJobJsonFilesRequest(msg, sendResponse);
+    return true;
+  }
 });
 
 chrome.downloads.onChanged.addListener((delta) => {
@@ -57,6 +62,31 @@ async function handleJsonExportRequest(msg, sendResponse) {
     await startDownloadAttempt(entry);
   } catch (error) {
     await settleFailure(entry, error.message || "Download failed to start");
+  }
+}
+
+async function handleJobJsonFilesRequest(msg, sendResponse) {
+  const files = Array.isArray(msg.files) ? msg.files : [];
+
+  try {
+    for (const file of files) {
+      await chrome.downloads.download({
+        url: buildDownloadDataUrl(JSON.stringify(file.payload ?? null, null, 2), "application/json"),
+        filename: file.filename,
+        saveAs: false
+      });
+    }
+
+    sendResponse({
+      ok: true,
+      fileCount: files.length
+    });
+  } catch (error) {
+    sendResponse({
+      ok: false,
+      fileCount: files.length,
+      error: error.message || "Download failed to start"
+    });
   }
 }
 

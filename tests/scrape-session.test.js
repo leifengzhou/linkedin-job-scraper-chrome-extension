@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  DEFAULT_EXPORT_MODE,
   DEFAULT_TARGET_COUNT,
   MAX_TARGET_COUNT,
   MIN_TARGET_COUNT,
@@ -16,6 +17,7 @@ const {
   requestPause,
   resumeRun,
   setDetailText,
+  setExportMode,
   setTargetCount,
   setModalOpen,
   startRun,
@@ -109,6 +111,17 @@ test("createScrapeSession starts with the default editable target", () => {
   assert.equal(DEFAULT_TARGET_COUNT, 25);
   assert.equal(session.targetCount, DEFAULT_TARGET_COUNT);
   assert.equal(session.activeTargetCount, null);
+  assert.equal(session.exportMode, DEFAULT_EXPORT_MODE);
+});
+
+test("setExportMode accepts supported values and rejects unknown ones", () => {
+  const session = createScrapeSession();
+
+  setExportMode(session, "json-per-job");
+  assert.equal(session.exportMode, "json-per-job");
+
+  setExportMode(session, "not-a-real-mode");
+  assert.equal(session.exportMode, DEFAULT_EXPORT_MODE);
 });
 
 test("setTargetCount clamps out-of-range values and rejects decimals", () => {

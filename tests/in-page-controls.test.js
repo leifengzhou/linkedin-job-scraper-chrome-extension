@@ -105,6 +105,7 @@ test("running state disables download and locks the target input", () => {
     currentPageTotal: 25,
     savedCount: 4,
     failedCount: 1,
+    exportMode: "single-json",
     targetCount: 25,
     activeTargetCount: 25,
     currentJobLabel: "Acme - Engineer",
@@ -114,6 +115,7 @@ test("running state disables download and locks the target input", () => {
 
   assert.equal(viewModel.downloadDisabled, true);
   assert.equal(viewModel.targetDisabled, true);
+  assert.equal(viewModel.exportModeDisabled, true);
   assert.equal(viewModel.targetValue, 25);
 });
 
@@ -124,6 +126,7 @@ test("paused state enables download and unlocks the target input", () => {
     currentPageTotal: 25,
     savedCount: 8,
     failedCount: 0,
+    exportMode: "json-per-job",
     targetCount: 50,
     activeTargetCount: 50,
     currentJobLabel: "Beta - PM",
@@ -133,6 +136,8 @@ test("paused state enables download and unlocks the target input", () => {
 
   assert.equal(viewModel.downloadDisabled, false);
   assert.equal(viewModel.targetDisabled, false);
+  assert.equal(viewModel.exportModeDisabled, false);
+  assert.equal(viewModel.exportModeValue, "json-per-job");
   assert.equal(viewModel.primaryLabel, "Resume");
 });
 
@@ -179,6 +184,7 @@ test("renderControls updates the primary button, download button, and target inp
     },
     primaryButtonEl: { textContent: "", disabled: false, dataset: {} },
     downloadButtonEl: { disabled: false },
+    exportModeSelectEl: { value: "", disabled: false },
     targetInputEl: { value: "", disabled: false, min: "", max: "", step: "" },
     chipEl: { textContent: "" }
   };
@@ -189,6 +195,8 @@ test("renderControls updates the primary button, download button, and target inp
     primaryDisabled: false,
     downloadDisabled: false,
     targetDisabled: false,
+    exportModeDisabled: false,
+    exportModeValue: "json-per-job",
     targetValue: 50,
     targetMin: 1,
     targetMax: 500,
@@ -202,6 +210,8 @@ test("renderControls updates the primary button, download button, and target inp
   assert.equal(domRefs.primaryButtonEl.textContent, "Resume");
   assert.equal(domRefs.primaryButtonEl.dataset.action, "resume");
   assert.equal(domRefs.downloadButtonEl.disabled, false);
+  assert.equal(domRefs.exportModeSelectEl.disabled, false);
+  assert.equal(domRefs.exportModeSelectEl.value, "json-per-job");
   assert.equal(domRefs.targetInputEl.value, "50");
   assert.equal(domRefs.targetInputEl.min, "1");
   assert.equal(domRefs.targetInputEl.max, "500");
@@ -241,6 +251,7 @@ test("renderControls writes icon markup when real DOM buttons are present", () =
       innerHTML: "",
       setAttribute() {}
     },
+    exportModeSelectEl: { value: "", disabled: false },
     targetInputEl: { value: "", disabled: false, min: "", max: "", step: "" },
     chipEl: { textContent: "" }
   };
@@ -251,6 +262,8 @@ test("renderControls writes icon markup when real DOM buttons are present", () =
     primaryDisabled: false,
     downloadDisabled: true,
     targetDisabled: true,
+    exportModeDisabled: true,
+    exportModeValue: "single-json",
     targetValue: 25,
     targetMin: 1,
     targetMax: 500,
@@ -295,6 +308,9 @@ test("createControlsDom uses a max-500 label and separate action row while omitt
   assert.ok(domRefs.rootEl.innerHTML.includes('data-role="target-row"'));
   assert.ok(targetRowMarkup);
   assert.ok(targetRowMarkup[1].includes('(max 500)'));
+  assert.ok(domRefs.rootEl.innerHTML.includes('data-role="export-mode-row"'));
+  assert.ok(domRefs.rootEl.innerHTML.includes('data-role="export-mode-select"'));
+  assert.ok(domRefs.rootEl.innerHTML.includes('One JSON file per job'));
   assert.ok(actionsRowMarkup);
   assert.ok(actionsRowMarkup[1].includes('data-action="download"'));
   assert.ok(!domRefs.rootEl.innerHTML.includes('data-role="current-job"'));
@@ -356,6 +372,7 @@ test("renderControls marks the running status as warning text", () => {
     },
     primaryButtonEl: { textContent: "", disabled: false, dataset: {} },
     downloadButtonEl: { disabled: false, dataset: {} },
+    exportModeSelectEl: { value: "", disabled: false },
     targetInputEl: { value: "", disabled: false, min: "", max: "", step: "" },
     chipEl: { textContent: "" }
   };
@@ -366,6 +383,8 @@ test("renderControls marks the running status as warning text", () => {
     primaryDisabled: false,
     downloadDisabled: true,
     targetDisabled: true,
+    exportModeDisabled: true,
+    exportModeValue: "single-json",
     targetValue: 25,
     targetMin: 1,
     targetMax: 500,

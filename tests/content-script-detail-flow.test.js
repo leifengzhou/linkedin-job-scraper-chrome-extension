@@ -85,7 +85,8 @@ function loadContentScriptTestApi({
   adapters = {},
   documentOverrides = {},
   locationSearch = "?currentJobId=123",
-  timerControls = createTimerControls()
+  timerControls = createTimerControls(),
+  sendMessageImpl
 } = {}) {
   assert.ok(
     CONTENT_SCRIPT_SOURCE.includes(CONTENT_SCRIPT_EXPORT_MARKER),
@@ -147,7 +148,13 @@ function loadContentScriptTestApi({
         onMessage: {
           addListener() {}
         },
-        sendMessage: async () => ({ ok: true })
+        sendMessage: async (...args) => {
+          if (typeof sendMessageImpl === "function") {
+            return sendMessageImpl(...args);
+          }
+
+          return { ok: true };
+        }
       }
     },
     document,
@@ -185,10 +192,13 @@ function loadContentScriptTestApi({
       return jobRecord;
     },
     buildJsonExportPayload() {
-      return {};
+      return { kind: "aggregate" };
+    },
+    buildPerJobJsonFileDescriptors() {
+      return [];
     },
     createJsonExportBuffer() {
-      return { partialCount: 0 };
+      return { jobs: [], failures: [], partialCount: 0 };
     }
   };
   sandbox.LinkedInScraperRetryPolicy = {
@@ -218,10 +228,12 @@ function loadContentScriptTestApi({
     createScrapeSession() {
       return {
         status: "idle",
+        exportMode: "single-json",
         targetCount: "",
         page: 1,
         savedCount: 0,
         failedCount: 0,
+        detailText: "",
         events: []
       };
     },
@@ -240,7 +252,9 @@ function loadContentScriptTestApi({
       return 0;
     },
     resumeRun() {},
-    setDetailText() {},
+    setDetailText(session, text) {
+      session.detailText = text;
+    },
     setTargetCount() {},
     setModalOpen() {},
     startRun() {},
@@ -311,6 +325,14 @@ function loadContentScriptTestApi({
 
   globalThis.__contentScriptTestApi = {
     collectCurrentJobData,
+    handleDownloadClick,
+    session,
+    setExportBuffer(value) {
+      exportBuffer = value;
+    },
+    setRunDate(value) {
+      runDate = value;
+    },
     waitForDetailChange
   };
 }
@@ -644,4 +666,59 @@ test("waitForDetailChange keeps waiting through semantic detail root remount and
   assert.equal(result, "after");
   assert.equal(resolvedSnapshot, "after");
   assert.deepEqual(observedSnapshotTargets, [oldDetailRoot, newDetailRoot]);
+});
+
+test("handleDownloadClick keeps the aggregate export request in single-json mode", async () => {
+  const sentMessages = [];
+  const { api } = loadContentScriptTestApi({
+    sendMessageImpl: async (message) => {
+      sentMessages.push(message);
+      return { ok: true };
+    }
+  });
+
+  api.session.status = "done";
+  api.session.exportMode = "single-json";
+  api.setRunDate("2026-05-04");
+  api.setExportBuffer({
+    jobs: [{ jobId: "123" }],
+    failures: [],
+    partialCount: 0
+  });
+
+  const result = await api.handleDownloadClick();
+
+  assert.equal(result, true);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].action, "downloadJsonExport");
+  assert.equal(sentMessages[0].filename, "scraped-jobs-2026-05-04.json");
+  assert.equal(sentMessages[0].payload.kind, "aggregate");
+  assert.equal(sentMessages[0].timeoutMs, 5000);
+});
+
+test("handleDownloadClick sends one-json-per-job requests when that export mode is selected", async () => {
+  const sentMessages = [];
+  const { api } = loadContentScriptTestApi({
+    sendMessageImpl: async (message) => {
+      sentMessages.push(message);
+      return { ok: true };
+    }
+  });
+
+  api.session.status = "done";
+  api.session.exportMode = "json-per-job";
+  api.setRunDate("2026-05-04");
+  api.setExportBuffer({
+    jobs: [{ jobId: "123" }],
+    failures: [],
+    partialCount: 0
+  });
+
+  const result = await api.handleDownloadClick();
+
+  assert.equal(result, true);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].action, "downloadJobJsonFiles");
+  assert.deepEqual(sentMessages[0].files, []);
+  assert.equal(sentMessages[0].timeoutMs, 5000);
 });

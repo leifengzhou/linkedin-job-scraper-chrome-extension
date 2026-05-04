@@ -3,6 +3,11 @@
   const DEFAULT_TARGET_COUNT = 25;
   const MIN_TARGET_COUNT = 1;
   const MAX_TARGET_COUNT = 500;
+  const DEFAULT_EXPORT_MODE = "single-json";
+  const VALID_EXPORT_MODES = new Set([
+    DEFAULT_EXPORT_MODE,
+    "json-per-job"
+  ]);
 
   function normalizeTargetCount(value) {
     const text = String(value).trim();
@@ -32,6 +37,7 @@
       failedCount: 0,
       currentJobLabel: "",
       detailText: "",
+      exportMode: DEFAULT_EXPORT_MODE,
       targetCount: DEFAULT_TARGET_COUNT,
       activeTargetCount: null,
       events: [],
@@ -111,6 +117,16 @@
     return session;
   }
 
+  function normalizeExportMode(value) {
+    const mode = String(value || "").trim();
+    return VALID_EXPORT_MODES.has(mode) ? mode : DEFAULT_EXPORT_MODE;
+  }
+
+  function setExportMode(session, value) {
+    session.exportMode = normalizeExportMode(value);
+    return session;
+  }
+
   function getProcessedCount(session) {
     return session.savedCount + session.failedCount;
   }
@@ -180,6 +196,7 @@
   }
 
   const api = {
+    DEFAULT_EXPORT_MODE,
     DEFAULT_TARGET_COUNT,
     MAX_TARGET_COUNT,
     MIN_TARGET_COUNT,
@@ -195,6 +212,7 @@
     requestPause,
     resolveResumeIndex,
     resumeRun,
+    setExportMode,
     normalizeTargetCount,
     setDetailText,
     setTargetCount,

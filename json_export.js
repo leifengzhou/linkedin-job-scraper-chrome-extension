@@ -54,11 +54,50 @@
     };
   }
 
+  function sanitizePathSegment(value, fallback = "Unknown") {
+    const normalized = String(value || fallback)
+      .replace(/[\/\\:*?"<>|]/g, "-")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+
+    return normalized || fallback;
+  }
+
+  function buildJobJsonFileDescriptor({
+    runDate,
+    jobRecord
+  }) {
+    const company = sanitizePathSegment(jobRecord.company, "Unknown-company");
+    const title = sanitizePathSegment(jobRecord.title, "Unknown-title");
+    const jobId = sanitizePathSegment(jobRecord.jobId, "unknown-job");
+    const filename = `scraped-jobs/${runDate}/${company}_${title}_${jobId}.json`;
+
+    return {
+      filename,
+      payload: {
+        ...jobRecord
+      }
+    };
+  }
+
+  function buildPerJobJsonFileDescriptors({
+    runDate,
+    buffer
+  }) {
+    return buffer.jobs.map((jobRecord) => buildJobJsonFileDescriptor({
+      runDate,
+      jobRecord
+    }));
+  }
+
   const api = {
     appendExportFailure,
     appendExportJob,
+    buildJobJsonFileDescriptor,
     buildExportJobRecord,
     buildJsonExportPayload,
+    buildPerJobJsonFileDescriptors,
     createJsonExportBuffer
   };
 

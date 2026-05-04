@@ -1,13 +1,14 @@
 # LinkedIn Job Scraper - Chrome Extension
 
-A Chrome Extension (Manifest V3) that scrapes LinkedIn job search results and exports the run as one structured JSON file. Built for collecting job postings to feed into an LLM-assisted application pipeline.
+A Chrome Extension (Manifest V3) that scrapes LinkedIn job search results and exports the run as structured JSON. Built for collecting job postings to feed into an LLM-assisted application pipeline.
 
 ## Features
 
 - Scrapes all jobs from LinkedIn search results, page by page
 - Extracts title, company, location, salary, date posted, apply type, and full description
 - Unwraps LinkedIn redirect URLs to get direct company apply links
-- Buffers extracted jobs in memory and downloads one JSON export only when the user clicks `Download`
+- Buffers extracted jobs in memory and downloads JSON only when the user clicks `Download`
+- Lets the user choose between one aggregate JSON file or one JSON file per job
 - Opens a guidance popup from the extension icon on every page
 - Launches the existing in-page scraper modal from the popup on supported LinkedIn Jobs `search-results/*` pages
 - Supports `Start`, `Pause`, `Resume`, `Stop`, and `Download` directly in the page
@@ -37,13 +38,21 @@ No build step required — the extension loads directly from source.
 
 ## Output
 
-The scraper downloads a single file only when the user clicks **Download** after pausing, stopping, or completing a run:
+The scraper downloads files only when the user clicks **Download** after pausing, stopping, or completing a run.
+
+`Single JSON file` mode:
 
 ```
 ~/Downloads/scraped-jobs-YYYY-MM-DD.json
 ```
 
-The JSON export contains run metadata, summary counts, successful jobs, and unrecoverable extraction failures:
+`One JSON file per job` mode:
+
+```
+~/Downloads/scraped-jobs/YYYY-MM-DD/<company>_<title>_<jobId>.json
+```
+
+The aggregate JSON export contains run metadata, summary counts, successful jobs, and unrecoverable extraction failures:
 
 ```json
 {
@@ -107,7 +116,7 @@ json_export.js      → Run-local JSON export buffer and payload helpers
 9. Partial jobs are still kept in the export buffer with `missingFields` and `exhaustedRetries` annotations
 10. The run is considered **done** when the requested processed-job target is reached, where `processed = saved + failed`
 11. If LinkedIn runs out of results before the target is reached, the run stops with the collected partial buffer still available
-12. Clicking **Download** after `Pause`, `Stop`, or `done` serializes the current buffer and downloads one JSON file via `chrome.downloads`
+12. Clicking **Download** after `Pause`, `Stop`, or `done` either serializes the current buffer into one JSON file or downloads one JSON file per saved job, depending on the selected mode
 13. The **background service worker** retries an interrupted final download with a fresh download for up to 5 seconds total
 14. If recovery still fails, the worker logs the failure to `chrome.storage.local.failedDownloads` for debugging, but the run-local saved/failed counts continue to reflect extraction outcomes only
 15. Closing the modal leaves behind a small reopen chip in the page
@@ -144,8 +153,9 @@ To inspect them:
 - Confirm progress updates while no file downloads during the active run
 - Pause mid-run and confirm the current job finishes before the scraper halts
 - Confirm `Download` is disabled while the scraper is still running and enabled after pause/stop/done
-- Click `Download` and confirm a JSON file appears in `~/Downloads/`
-- Open the JSON file and confirm partial jobs still appear in `jobs` with `missingFields`
+- Leave **Download format** on `Single JSON file`, click `Download`, and confirm one JSON file appears in `~/Downloads/`
+- Switch **Download format** to `One JSON file per job`, click `Download`, and confirm one JSON file appears per saved job in `~/Downloads/scraped-jobs/YYYY-MM-DD/`
+- Open the aggregate JSON file and confirm partial jobs still appear in `jobs` with `missingFields`
 - Confirm unrecoverable extraction failures appear under `failures`
 - Confirm interrupted final export downloads retry automatically for up to 5 seconds
 - Confirm unrecoverable final export failures are stored in `chrome.storage.local.failedDownloads`

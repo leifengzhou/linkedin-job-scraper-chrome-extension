@@ -22,6 +22,7 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
     appendExportFailure,
     appendExportJob,
     buildExportJobRecord,
+    buildPerJobJsonFileDescriptors,
     buildJsonExportPayload,
     createJsonExportBuffer
   } = globalThis.LinkedInScraperJsonExport;
@@ -47,6 +48,7 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
     resolveResumeIndex,
     resumeRun,
     setDetailText,
+    setExportMode,
     setTargetCount,
     setModalOpen,
     startRun,
@@ -115,6 +117,9 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
     });
     controls.targetInputEl.addEventListener("change", () => {
       handleTargetChange();
+    });
+    controls.exportModeSelectEl.addEventListener("change", () => {
+      handleExportModeChange();
     });
     controls.closeButtonEl.addEventListener("click", () => {
       closeControlsToChip();
@@ -209,6 +214,11 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
 
   function handleTargetChange() {
     setTargetCount(session, controls?.targetInputEl?.value || session.targetCount);
+    renderSession();
+  }
+
+  function handleExportModeChange() {
+    setExportMode(session, controls?.exportModeSelectEl?.value || session.exportMode);
     renderSession();
   }
 
@@ -495,19 +505,29 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
     }
 
     const exportDate = runDate || new Date().toISOString().slice(0, 10);
-    const payload = buildJsonExportPayload({
-      runDate: exportDate,
-      buffer: exportBuffer
-    });
     let exportResult;
 
     try {
-      exportResult = await chrome.runtime.sendMessage({
-        action: "downloadJsonExport",
-        filename: `scraped-jobs-${exportDate}.json`,
-        payload,
-        timeoutMs: 5000
-      });
+      if (session.exportMode === "json-per-job") {
+        exportResult = await chrome.runtime.sendMessage({
+          action: "downloadJobJsonFiles",
+          files: buildPerJobJsonFileDescriptors({
+            runDate: exportDate,
+            buffer: exportBuffer
+          }),
+          timeoutMs: 5000
+        });
+      } else {
+        exportResult = await chrome.runtime.sendMessage({
+          action: "downloadJsonExport",
+          filename: `scraped-jobs-${exportDate}.json`,
+          payload: buildJsonExportPayload({
+            runDate: exportDate,
+            buffer: exportBuffer
+          }),
+          timeoutMs: 5000
+        });
+      }
     } catch (error) {
       exportResult = {
         ok: false,

@@ -43,6 +43,8 @@
       primaryDisabled: isPauseRequested,
       downloadDisabled: !canDownload,
       statusTone: isRunning || isPauseRequested ? "warning" : "default",
+      exportModeDisabled: !canEditTarget,
+      exportModeValue: session.exportMode || "single-json",
       targetDisabled: !canEditTarget,
       targetValue: session.targetCount ?? 25,
       targetMin: 1,
@@ -206,9 +208,21 @@
         flex-wrap: nowrap;
       }
 
+      #linked-in-scraper-controls-root [data-role="export-mode-row"] {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin: 10px 0 0;
+        font-size: 12px;
+      }
+
       #linked-in-scraper-controls-root [data-role="target-label"] {
         font-weight: 600;
         white-space: nowrap;
+      }
+
+      #linked-in-scraper-controls-root [data-role="export-mode-label"] {
+        font-weight: 600;
       }
 
       #linked-in-scraper-controls-root [data-role="target-input"] {
@@ -217,6 +231,15 @@
         border-radius: 10px;
         padding: 6px 8px;
         font: inherit;
+      }
+
+      #linked-in-scraper-controls-root [data-role="export-mode-select"] {
+        width: 100%;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        padding: 8px 10px;
+        font: inherit;
+        background: white;
       }
 
       #linked-in-scraper-controls-root [data-role="events"] {
@@ -256,6 +279,13 @@
           <label data-role="target-label" for="linked-in-scraper-target-input">Jobs to scrape (max 500)</label>
           <input id="linked-in-scraper-target-input" type="number" data-role="target-input" min="1" max="500" step="1" inputmode="numeric">
         </div>
+        <div data-role="export-mode-row">
+          <label data-role="export-mode-label" for="linked-in-scraper-export-mode-select">Download format</label>
+          <select id="linked-in-scraper-export-mode-select" data-role="export-mode-select">
+            <option value="single-json">Single JSON file</option>
+            <option value="json-per-job">One JSON file per job</option>
+          </select>
+        </div>
         <div data-role="actions">
           <button type="button" data-role="primary-action" data-action="start">Start</button>
           <button type="button" data-action="download">Download</button>
@@ -275,6 +305,7 @@
       eventsEl: rootEl.querySelector('[data-role="events"]'),
       primaryButtonEl: rootEl.querySelector('[data-role="primary-action"]'),
       downloadButtonEl: rootEl.querySelector('[data-action="download"]'),
+      exportModeSelectEl: rootEl.querySelector('[data-role="export-mode-select"]'),
       targetInputEl: rootEl.querySelector('[data-role="target-input"]'),
       closeButtonEl: rootEl.querySelector('[data-action="close"]')
     };
@@ -332,6 +363,8 @@
     domRefs.primaryButtonEl.disabled = viewModel.primaryDisabled;
     renderActionButton(domRefs.downloadButtonEl, "download", "Download");
     domRefs.downloadButtonEl.disabled = viewModel.downloadDisabled;
+    domRefs.exportModeSelectEl.disabled = viewModel.exportModeDisabled;
+    domRefs.exportModeSelectEl.value = viewModel.exportModeValue;
     domRefs.targetInputEl.disabled = viewModel.targetDisabled;
     domRefs.targetInputEl.value = String(viewModel.targetValue);
     domRefs.targetInputEl.min = String(viewModel.targetMin);
