@@ -111,6 +111,7 @@ test("createScrapeSession starts with the default editable target", () => {
   assert.equal(DEFAULT_TARGET_COUNT, 25);
   assert.equal(session.targetCount, DEFAULT_TARGET_COUNT);
   assert.equal(session.activeTargetCount, null);
+  assert.equal(DEFAULT_EXPORT_MODE, "json-per-job");
   assert.equal(session.exportMode, DEFAULT_EXPORT_MODE);
 });
 

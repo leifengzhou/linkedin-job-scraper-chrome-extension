@@ -13,6 +13,7 @@ const fixturePath = path.join(
 const requiredAnchors = [
   'data-testid="lazy-column"',
   'componentkey="SearchResultsMainContent"',
+  'id="location-marker-small"',
   'aria-label="Dismiss ',
   'data-testid="pagination-controls-next-button-visible"',
   'data-sdui-screen="com.linkedin.sdui.flagshipnav.jobs.SemanticJobDetails"',

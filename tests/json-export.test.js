@@ -4,7 +4,9 @@ const assert = require("node:assert/strict");
 const {
   appendExportFailure,
   appendExportJob,
+  buildAggregateJsonFilename,
   buildJobJsonFileDescriptor,
+  buildLocationFilterFilenameSegment,
   buildExportJobRecord,
   buildJsonExportPayload,
   buildPerJobJsonFileDescriptors,
@@ -140,6 +142,7 @@ test("buildJsonExportPayload summarizes saved partial and failed results", () =>
 test("buildJobJsonFileDescriptor creates a dated json path for one saved job", () => {
   const descriptor = buildJobJsonFileDescriptor({
     runDate: "2026-05-04",
+    locationFilterSegment: "Austin-Texas-Metropolitan-Area",
     jobRecord: buildExportJobRecord({
       title: "AI Strategist",
       company: "Distyl AI",
@@ -160,7 +163,10 @@ test("buildJobJsonFileDescriptor creates a dated json path for one saved job", (
     })
   });
 
-  assert.equal(descriptor.filename, "scraped-jobs/2026-05-04/Distyl-AI_AI-Strategist_123.json");
+  assert.equal(
+    descriptor.filename,
+    "scraped-jobs/2026-05-04/Distyl-AI_AI-Strategist_Austin-Texas-Metropolitan-Area_123.json"
+  );
   assert.equal(descriptor.payload.jobId, "123");
   assert.deepEqual(descriptor.payload.hiringTeam, [{
     name: "Michael Deayala",
@@ -168,6 +174,23 @@ test("buildJobJsonFileDescriptor creates a dated json path for one saved job", (
     memberTitle: "Senior Recruiter",
     linkedinMessage: "Hi Michael, I recently applied for the AI Strategist role at Distyl AI and would love to connect. I'm very interested in the opportunity and in the work your team is doing. Thanks!"
   }]);
+});
+
+test("buildLocationFilterFilenameSegment turns comma-space separated filter text into a single-dash path segment", () => {
+  assert.equal(
+    buildLocationFilterFilenameSegment("Austin, Texas Metropolitan Area"),
+    "Austin-Texas-Metropolitan-Area"
+  );
+});
+
+test("buildAggregateJsonFilename includes the normalized full location segment", () => {
+  assert.equal(
+    buildAggregateJsonFilename({
+      runDate: "2026-05-04",
+      locationFilterSegment: "Austin-Texas-Metropolitan-Area"
+    }),
+    "Austin-Texas-Metropolitan-Area_scraped-jobs-2026-05-04.json"
+  );
 });
 
 test("buildPerJobJsonFileDescriptors creates one json file per saved job only", () => {
@@ -210,12 +233,13 @@ test("buildPerJobJsonFileDescriptors creates one json file per saved job only", 
 
   const files = buildPerJobJsonFileDescriptors({
     runDate: "2026-05-04",
+    locationFilterSegment: "Austin-Texas-Metropolitan-Area",
     buffer
   });
 
   assert.deepEqual(files.map((file) => file.filename), [
-    "scraped-jobs/2026-05-04/Distyl-AI_AI-Strategist_123.json",
-    "scraped-jobs/2026-05-04/Acme-Labs_ML-Engineer-Platform_456.json"
+    "scraped-jobs/2026-05-04/Distyl-AI_AI-Strategist_Austin-Texas-Metropolitan-Area_123.json",
+    "scraped-jobs/2026-05-04/Acme-Labs_ML-Engineer-Platform_Austin-Texas-Metropolitan-Area_456.json"
   ]);
   assert.equal(files[1].payload.exhaustedRetries, true);
   assert.deepEqual(files[1].payload.missingFields, ["aboutCompany"]);

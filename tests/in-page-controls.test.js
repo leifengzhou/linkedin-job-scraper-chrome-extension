@@ -25,6 +25,7 @@ test("idle state enables only Start", () => {
   assert.equal(viewModel.primaryAction, "start");
   assert.equal(viewModel.primaryDisabled, false);
   assert.equal(viewModel.downloadDisabled, true);
+  assert.equal(viewModel.exportModeValue, "json-per-job");
 });
 
 test("paused state turns the primary control into Resume and enables Download", () => {

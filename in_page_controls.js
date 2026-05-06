@@ -44,7 +44,7 @@
       downloadDisabled: !canDownload,
       statusTone: isRunning || isPauseRequested ? "warning" : "default",
       exportModeDisabled: !canEditTarget,
-      exportModeValue: session.exportMode || "single-json",
+      exportModeValue: session.exportMode || "json-per-job",
       targetDisabled: !canEditTarget,
       targetValue: session.targetCount ?? 25,
       targetMin: 1,

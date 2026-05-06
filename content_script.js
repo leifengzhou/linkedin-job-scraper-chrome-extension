@@ -15,6 +15,8 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
   let isRunning = false;
   let stopRequested = false;
   let runDate = null;
+  let runLocationFilterText = "";
+  let runLocationFilterSegment = "";
   let controls = null;
   let exportBuffer = null;
   let queuedPerJobFilenames = new Set();
@@ -22,7 +24,9 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
   const {
     appendExportFailure,
     appendExportJob,
+    buildAggregateJsonFilename,
     buildJobJsonFileDescriptor,
+    buildLocationFilterFilenameSegment,
     buildExportJobRecord,
     buildPerJobJsonFileDescriptors,
     buildJsonExportPayload,
@@ -60,6 +64,7 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
     extractApplyAction,
     extractCardData: extractCardDataFromDom,
     extractDetailData,
+    extractSearchLocationFilter,
     findAboutCompanySection,
     findAboutJobSection,
     findDetailRoot,
@@ -177,6 +182,8 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
       resumeRun(session);
     } else {
       runDate = new Date().toISOString().slice(0, 10);
+      runLocationFilterText = extractSearchLocationFilter(document);
+      runLocationFilterSegment = buildLocationFilterFilenameSegment(runLocationFilterText);
       exportBuffer = createJsonExportBuffer();
       queuedPerJobFilenames = new Set();
       startRun(session);
@@ -425,7 +432,10 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
           );
         }
 
-        const jobRecord = buildExportJobRecord(normalizeJobForExport(jobData), {
+        const jobRecord = buildExportJobRecord(normalizeJobForExport({
+          ...jobData,
+          locationFilter: runLocationFilterText
+        }), {
           missingFields,
           exhaustedRetries
         });
@@ -516,6 +526,7 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
       if (session.exportMode === "json-per-job") {
         const files = buildPerJobJsonFileDescriptors({
           runDate: exportDate,
+          locationFilterSegment: runLocationFilterSegment,
           buffer: exportBuffer
         }).filter((file) => !queuedPerJobFilenames.has(file.filename));
 
@@ -546,7 +557,10 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
       } else {
         exportResult = await chrome.runtime.sendMessage({
           action: "downloadJsonExport",
-          filename: `scraped-jobs-${exportDate}.json`,
+          filename: buildAggregateJsonFilename({
+            runDate: exportDate,
+            locationFilterSegment: runLocationFilterSegment
+          }),
           payload: buildJsonExportPayload({
             runDate: exportDate,
             buffer: exportBuffer
@@ -588,6 +602,7 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
     const exportDate = runDate || new Date().toISOString().slice(0, 10);
     const file = buildJobJsonFileDescriptor({
       runDate: exportDate,
+      locationFilterSegment: runLocationFilterSegment,
       jobRecord
     });
 
@@ -677,6 +692,7 @@ if (!shouldBootstrapContentScript(window.__linkedInScraperLoaded, currentRuntime
       title: jobData.title || "",
       company: jobData.company || "",
       location: jobData.location || "",
+      location_filter: jobData.locationFilter || "",
       salary: jobData.salary || "",
       datePosted: jobData.datePosted || "",
       applyType: jobData.applyType || "",

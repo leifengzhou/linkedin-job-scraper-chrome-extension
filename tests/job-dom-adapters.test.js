@@ -14,6 +14,7 @@ const {
   extractDetailData,
   findAboutJobSection,
   findAboutCompanySection,
+  extractSearchLocationFilter,
   extractApplyAction
 } = require("../job_dom_adapters.js");
 
@@ -355,6 +356,31 @@ function createHiringTeamDetailRoot({ includeSection = true } = {}) {
   return detailRoot;
 }
 
+function createLocationFilterDoc(text) {
+  const labelEl = createElement({
+    innerText: text,
+    textContent: text
+  });
+  const wrapperEl = createElement({
+    queryAll: {
+      p: [labelEl]
+    }
+  });
+  const iconEl = createElement();
+
+  iconEl.parentElement = wrapperEl;
+
+  return {
+    querySelector(selector) {
+      if (selector === "svg#location-marker-small") {
+        return iconEl;
+      }
+
+      return null;
+    }
+  };
+}
+
 test("findJobListContainer returns the search-results main lazy column when it contains dismissible role-button cards", () => {
   const dismissButton = createElement({
     attributes: { "aria-label": "Dismiss Senior Product Manager job" }
@@ -523,6 +549,20 @@ test("extractDetailData falls back to an empty hiring-team array when the sectio
   const detailData = extractDetailData(createHiringTeamDetailRoot({ includeSection: false }));
 
   assert.deepEqual(detailData.hiringTeam, []);
+});
+
+test("extractSearchLocationFilter reads the search-results location control text", () => {
+  const locationText = requireFixtureMatch(
+    /<p class="[^"]*">New York City Metropolitan Area<\/p>/,
+    "expected fixture location filter text"
+  )[0]
+    .replace(/<[^>]+>/g, "")
+    .trim();
+
+  assert.equal(
+    extractSearchLocationFilter(createLocationFilterDoc(locationText)),
+    "New York City Metropolitan Area"
+  );
 });
 
 test("findAboutJobSection returns the About the job expandable text block", () => {

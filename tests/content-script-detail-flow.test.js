@@ -188,15 +188,33 @@ function loadContentScriptTestApi({
   sandbox.LinkedInScraperJsonExport = {
     appendExportFailure() {},
     appendExportJob() {},
+    buildAggregateJsonFilename({ runDate, locationFilterSegment }) {
+      return locationFilterSegment
+        ? `${locationFilterSegment}_scraped-jobs-${runDate}.json`
+        : `scraped-jobs-${runDate}.json`;
+    },
     buildExportJobRecord(jobRecord) {
       return jobRecord;
+    },
+    buildJobJsonFileDescriptor({ runDate, jobRecord, locationFilterSegment }) {
+      const jobId = jobRecord.jobId || "unknown";
+      const company = jobRecord.company || "Unknown-company";
+      const title = jobRecord.title || "Unknown-title";
+      return {
+        filename: locationFilterSegment
+          ? `scraped-jobs/${runDate}/${company}_${title}_${locationFilterSegment}_${jobId}.json`
+          : `scraped-jobs/${runDate}/${company}_${title}_${jobId}.json`,
+        payload: jobRecord
+      };
     },
     buildJsonExportPayload() {
       return { kind: "aggregate" };
     },
-    buildPerJobJsonFileDescriptors({ runDate, buffer }) {
+    buildPerJobJsonFileDescriptors({ runDate, buffer, locationFilterSegment }) {
       return (buffer?.jobs || []).map((jobRecord) => ({
-        filename: `scraped-jobs/${runDate}/${jobRecord.jobId || "unknown"}.json`,
+        filename: locationFilterSegment
+          ? `scraped-jobs/${runDate}/${jobRecord.company || "Unknown-company"}_${jobRecord.title || "Unknown-title"}_${locationFilterSegment}_${jobRecord.jobId || "unknown"}.json`
+          : `scraped-jobs/${runDate}/${jobRecord.company || "Unknown-company"}_${jobRecord.title || "Unknown-title"}_${jobRecord.jobId || "unknown"}.json`,
         payload: jobRecord
       }));
     },
@@ -231,7 +249,7 @@ function loadContentScriptTestApi({
     createScrapeSession() {
       return {
         status: "idle",
-        exportMode: "single-json",
+        exportMode: "json-per-job",
         targetCount: "",
         page: 1,
         savedCount: 0,
@@ -309,6 +327,9 @@ function loadContentScriptTestApi({
     findNextPageButton() {
       return null;
     },
+    extractSearchLocationFilter() {
+      return "";
+    },
     getCardKey() {
       return null;
     },
@@ -331,9 +352,16 @@ function loadContentScriptTestApi({
     collectCurrentJobData,
     handleDownloadClick,
     normalizeJobForExport,
+    queuePerJobFileIfNeeded,
     session,
     setExportBuffer(value) {
       exportBuffer = value;
+    },
+    setRunLocationFilterSegment(value) {
+      runLocationFilterSegment = value;
+    },
+    setRunLocationFilterText(value) {
+      runLocationFilterText = value;
     },
     setRunDate(value) {
       runDate = value;
@@ -581,6 +609,8 @@ test("normalizeJobForExport keeps hiring-team arrays and defaults missing values
   const normalizedWithTeam = JSON.parse(JSON.stringify(api.normalizeJobForExport({
     title: "AI Strategist",
     company: "Distyl AI",
+    location: "Boston, MA",
+    locationFilter: "Massachusetts, United States",
     hiringTeam: [{
       name: "Michael Deayala",
       linkedinUrl: "https://www.linkedin.com/in/michaeldeayala/",
@@ -597,6 +627,9 @@ test("normalizeJobForExport keeps hiring-team arrays and defaults missing values
   }]);
 
   assert.deepEqual(normalizedWithoutTeam.hiringTeam, []);
+  assert.equal(normalizedWithTeam.location_filter, "Massachusetts, United States");
+  assert.equal(normalizedWithoutTeam.location_filter, "");
+  assert.ok(Object.keys(normalizedWithTeam).indexOf("location") < Object.keys(normalizedWithTeam).indexOf("location_filter"));
   assert.ok(Object.keys(normalizedWithTeam).indexOf("hiringTeam") < Object.keys(normalizedWithTeam).indexOf("description"));
 });
 
@@ -790,6 +823,7 @@ test("handleDownloadClick keeps the aggregate export request in single-json mode
   api.session.status = "done";
   api.session.exportMode = "single-json";
   api.setRunDate("2026-05-04");
+  api.setRunLocationFilterSegment("Austin-Texas-Metropolitan-Area");
   api.setExportBuffer({
     jobs: [{ jobId: "123" }],
     failures: [],
@@ -801,7 +835,7 @@ test("handleDownloadClick keeps the aggregate export request in single-json mode
   assert.equal(result, true);
   assert.equal(sentMessages.length, 1);
   assert.equal(sentMessages[0].action, "downloadJsonExport");
-  assert.equal(sentMessages[0].filename, "scraped-jobs-2026-05-04.json");
+  assert.equal(sentMessages[0].filename, "Austin-Texas-Metropolitan-Area_scraped-jobs-2026-05-04.json");
   assert.equal(sentMessages[0].payload.kind, "aggregate");
   assert.equal(sentMessages[0].timeoutMs, 5000);
 });
@@ -818,8 +852,14 @@ test("handleDownloadClick sends one-json-per-job requests when that export mode 
   api.session.status = "done";
   api.session.exportMode = "json-per-job";
   api.setRunDate("2026-05-04");
+  api.setRunLocationFilterSegment("Austin-Texas-Metropolitan-Area");
   api.setExportBuffer({
-    jobs: [{ jobId: "123" }],
+    jobs: [{
+      company: "Distyl-AI",
+      title: "AI-Strategist",
+      jobId: "123",
+      location_filter: "Austin, Texas Metropolitan Area"
+    }],
     failures: [],
     partialCount: 0
   });
@@ -830,10 +870,48 @@ test("handleDownloadClick sends one-json-per-job requests when that export mode 
   assert.equal(sentMessages.length, 1);
   assert.equal(sentMessages[0].action, "downloadJobJsonFiles");
   assert.deepEqual(sentMessages[0].files, [{
-    filename: "scraped-jobs/2026-05-04/123.json",
+    filename: "scraped-jobs/2026-05-04/Distyl-AI_AI-Strategist_Austin-Texas-Metropolitan-Area_123.json",
     payload: {
-      jobId: "123"
+      company: "Distyl-AI",
+      title: "AI-Strategist",
+      jobId: "123",
+      location_filter: "Austin, Texas Metropolitan Area"
     }
   }]);
   assert.equal(sentMessages[0].timeoutMs, 5000);
+});
+
+test("queuePerJobFileIfNeeded adds the normalized full location segment after company and title", async () => {
+  const sentMessages = [];
+  const { api } = loadContentScriptTestApi({
+    sendMessageImpl: async (message) => {
+      sentMessages.push(message);
+      return { ok: true };
+    }
+  });
+
+  api.session.exportMode = "json-per-job";
+  api.setRunDate("2026-05-04");
+  api.setRunLocationFilterSegment("Austin-Texas-Metropolitan-Area");
+  api.setRunLocationFilterText("Austin, Texas Metropolitan Area");
+
+  const result = await api.queuePerJobFileIfNeeded({
+    company: "Distyl-AI",
+    title: "AI-Strategist",
+    jobId: "123",
+    location_filter: "Austin, Texas Metropolitan Area"
+  });
+
+  assert.equal(result, true);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].action, "queueJobJsonFile");
+  assert.deepEqual(sentMessages[0].file, {
+    filename: "scraped-jobs/2026-05-04/Distyl-AI_AI-Strategist_Austin-Texas-Metropolitan-Area_123.json",
+    payload: {
+      company: "Distyl-AI",
+      title: "AI-Strategist",
+      jobId: "123",
+      location_filter: "Austin, Texas Metropolitan Area"
+    }
+  });
 });

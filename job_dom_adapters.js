@@ -7,6 +7,7 @@
   const ABOUT_COMPANY_SECTION_SELECTOR = '[componentkey^="JobDetails_AboutTheCompany_"]';
   const HIRING_TEAM_HEADING_SELECTOR = "h1, h2, h3, p, span, div";
   const HIRING_TEAM_PROFILE_SELECTOR = 'a[href*="/in/"]';
+  const LOCATION_FILTER_ICON_SELECTOR = "svg#location-marker-small";
   const NEXT_PAGE_SELECTORS = [
     'button[data-testid="pagination-controls-next-button-visible"]',
     'button[aria-label="View next page"]'
@@ -250,6 +251,25 @@
     return getSectionContext(detailRoot?.querySelector?.(ABOUT_COMPANY_SECTION_SELECTOR) || null);
   }
 
+  function extractSearchLocationFilter(rootNode = document) {
+    const iconEl = rootNode?.querySelector?.(LOCATION_FILTER_ICON_SELECTOR) || null;
+    let current = iconEl?.parentElement || null;
+
+    while (current) {
+      const locationText = findAll(current, "p")
+        .map((el) => getText(el))
+        .find(Boolean);
+
+      if (locationText) {
+        return locationText;
+      }
+
+      current = current.parentElement || null;
+    }
+
+    return "";
+  }
+
   function isHiringTeamHeading(text) {
     return String(text || "").trim().toLowerCase() === "meet the hiring team";
   }
@@ -488,6 +508,7 @@
     extractApplyAction,
     extractCardData,
     extractDetailData,
+    extractSearchLocationFilter,
     findAboutCompanySection,
     findAboutJobSection,
     findDetailRoot,

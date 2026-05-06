@@ -3,10 +3,10 @@
   const DEFAULT_TARGET_COUNT = 25;
   const MIN_TARGET_COUNT = 1;
   const MAX_TARGET_COUNT = 500;
-  const DEFAULT_EXPORT_MODE = "single-json";
+  const DEFAULT_EXPORT_MODE = "json-per-job";
   const VALID_EXPORT_MODES = new Set([
     DEFAULT_EXPORT_MODE,
-    "json-per-job"
+    "single-json"
   ]);
 
   function normalizeTargetCount(value) {

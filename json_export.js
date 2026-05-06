@@ -64,14 +64,53 @@
     return normalized || fallback;
   }
 
+  function normalizeLocationFilterText(value) {
+    return String(value || "")
+      .trim()
+      .replace(/\s+/g, " ");
+  }
+
+  function buildLocationFilterFilenameSegment(locationFilter) {
+    const normalized = normalizeLocationFilterText(locationFilter);
+    if (!normalized) {
+      return "";
+    }
+
+    return normalized
+      .replace(/[\/\\:*?"<>|]/g, "-")
+      .replace(/,\s*/g, "-")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+  }
+
+  function prependLocationFilterSegment(filename, locationFilterSegment) {
+    const normalizedSegment = sanitizePathSegment(locationFilterSegment, "");
+    return normalizedSegment ? `${normalizedSegment}_${filename}` : filename;
+  }
+
+  function buildAggregateJsonFilename({
+    runDate,
+    locationFilterSegment = ""
+  }) {
+    return prependLocationFilterSegment(`scraped-jobs-${runDate}.json`, locationFilterSegment);
+  }
+
   function buildJobJsonFileDescriptor({
     runDate,
+    locationFilterSegment = "",
     jobRecord
   }) {
     const company = sanitizePathSegment(jobRecord.company, "Unknown-company");
     const title = sanitizePathSegment(jobRecord.title, "Unknown-title");
     const jobId = sanitizePathSegment(jobRecord.jobId, "unknown-job");
-    const filename = `scraped-jobs/${runDate}/${company}_${title}_${jobId}.json`;
+    const basename = [
+      company,
+      title,
+      sanitizePathSegment(locationFilterSegment, ""),
+      jobId
+    ].filter(Boolean).join("_");
+    const filename = `scraped-jobs/${runDate}/${basename}.json`;
 
     return {
       filename,
@@ -83,10 +122,12 @@
 
   function buildPerJobJsonFileDescriptors({
     runDate,
+    locationFilterSegment = "",
     buffer
   }) {
     return buffer.jobs.map((jobRecord) => buildJobJsonFileDescriptor({
       runDate,
+      locationFilterSegment,
       jobRecord
     }));
   }
@@ -94,7 +135,9 @@
   const api = {
     appendExportFailure,
     appendExportJob,
+    buildAggregateJsonFilename,
     buildJobJsonFileDescriptor,
+    buildLocationFilterFilenameSegment,
     buildExportJobRecord,
     buildJsonExportPayload,
     buildPerJobJsonFileDescriptors,
